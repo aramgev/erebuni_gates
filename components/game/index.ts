@@ -1,0 +1,5 @@
+export { MainMenu } from "./main-menu"
+export { GameHUD } from "./game-hud"
+export { GateSelection, type Gate } from "./gate-selection"
+export { GameOver } from "./game-over"
+export { GameCanvas } from "./GameCanvas"
