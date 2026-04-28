@@ -457,7 +457,10 @@ export function GameCanvas({
     const platformTopY = platformHeight + 0.5 // thickness=1
     const eyeHeightAbovePlatform = 1.6
     const playerHeightY = platformTopY + eyeHeightAbovePlatform
-    camera.position.set(0, playerHeightY, 7.5)
+    // Spawn a bit closer to the front wall so the exit portal (near the rear)
+    // can't be triggered immediately at game start.
+    const spawnZ = 4.4
+    camera.position.set(0, playerHeightY, spawnZ)
     camera.lookAt(0, 8, -45)
 
     // Vibe Jam portals (native implementation; no external script required).
@@ -518,28 +521,50 @@ export function GameCanvas({
       return group
     }
 
+    // Exit portal (original placement near the rear parapet).
     const exitPortalPos = new THREE.Vector3(0, platformTopY + 0.08, platformZ + platformDepth / 2 - 1.8)
     const exitPortal = makePortal("vibejam-exit-portal", 0x3cff7e, "VIBE JAM PORTAL", exitPortalPos)
     portalGroup.add(exitPortal)
 
-    const spawnPos = new THREE.Vector3(0, platformTopY + 0.08, 7.5)
+    const spawnPos = new THREE.Vector3(0, platformTopY + 0.08, spawnZ)
     const shouldAddReturnPortal = Boolean(portalProfile?.portal && portalProfile?.ref)
     const returnPortal = shouldAddReturnPortal
       ? makePortal("vibejam-return-portal", 0xff5b3b, "RETURN", spawnPos.clone().add(new THREE.Vector3(3.2, 0, 0)))
       : null
     if (returnPortal) portalGroup.add(returnPortal)
 
-    const portalRadius = 1.25
+    const portalTriggerRadius = 2.35
     let portalRedirecting = false
+    let portalEnterStartedAtMs = 0
+    let portalRedirectAtMs = 0
+    let portalFade = 0
+    // Prevent accidental portal triggers right at start (spawn jitter, initial touch, etc.)
+    const portalArmedAtMs = performance.now() + 1200
+    const portalFadePlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(2, 2),
+      new THREE.MeshBasicMaterial({
+        color: 0x0a0b10,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      }),
+    )
+    portalFadePlane.name = "portal-fade-overlay"
+    portalFadePlane.renderOrder = 9999
+    scene.add(portalFadePlane)
+
+    const horizontalDistanceTo = (a: any, b: any) => {
+      const dx = a.x - b.x
+      const dz = a.z - b.z
+      return Math.hypot(dx, dz)
+    }
+
     const buildExitPortalUrl = () => {
       const params = new URLSearchParams()
       const username = (portalProfile?.username || "").trim() || "Portal Defender"
       params.set("username", username)
-      const color = (portalProfile?.color || "").trim()
-      if (color) params.set("color", color)
-      const hp = Math.max(1, Math.min(100, Math.round(getCurrentHp?.() ?? 100)))
-      params.set("hp", String(hp))
-      params.set("ref", window.location.hostname)
+      // Vibe Jam requirement for this game: always pass a stable ref URL.
+      params.set("ref", "https://erebuni-gates.amiracle.net/")
       return `https://vibej.am/portal/2026?${params.toString()}`
     }
 
@@ -1179,6 +1204,34 @@ export function GameCanvas({
       console.log("[shot hit]", obj.name || obj.uuid)
     }
 
+    const selectGate = (gate: Gate, now: number) => {
+      highlightedGate = gate.type
+      gateHighlightUntilMs = now + 250
+      playSound("gateSelect")
+      onGateSelected?.(gate.type)
+      console.log(`gate selected: ${gate.label}`)
+
+      // Begin next wave immediately after selection
+      startWave(waveNumber + 1, gate.type)
+    }
+
+    const trySelectGateAtScreen = (clientX: number, clientY: number) => {
+      if (phase.mode !== "GATE_SELECTION") return false
+      const x = (clientX / window.innerWidth) * 2 - 1
+      const y = -(clientY / window.innerHeight) * 2 + 1
+      const screen = new THREE.Vector2(x, y)
+      const hitAreas = gates.map((g) => g.hitArea).filter(Boolean)
+      if (hitAreas.length === 0) return false
+      raycaster.setFromCamera(screen, camera)
+      const hits = raycaster.intersectObjects(hitAreas as any, true)
+      const hit = hits[0]
+      if (!hit) return false
+      const picked = gates.find((g) => g.hitArea === hit.object || g.hitArea === hit.object.parent)
+      if (!picked) return false
+      selectGate(picked, performance.now())
+      return true
+    }
+
     // Simple first-person controller (no external libs)
     const keys = new Set<string>()
     let interactPressed = false
@@ -1325,11 +1378,18 @@ export function GameCanvas({
         touches.delete(t.identifier)
         if (!st) continue
 
-        // Quick tap on the right side shoots.
-        if (st.side === "right") {
-          const dt = performance.now() - st.startAtMs
-          if (dt < 250 && st.movedPx < 12) shoot()
+        const dt = performance.now() - st.startAtMs
+        const isTap = dt < 250 && st.movedPx < 12
+        if (!isTap) continue
+
+        // In gate selection, allow tapping a gate to select it (mobile-friendly).
+        if (phase.mode === "GATE_SELECTION") {
+          const selected = trySelectGateAtScreen(st.x, st.y)
+          if (selected) continue
         }
+
+        // Otherwise, quick tap on the right side shoots.
+        if (st.side === "right") shoot()
       }
       updateJoystick()
     }
@@ -1513,33 +1573,51 @@ export function GameCanvas({
           Number.isFinite(nearestDistance) ? nearestDistance.toFixed(2) : "n/a",
         )
         if (nearestGateInRange && nearestGate) {
-          highlightedGate = nearestGate.type
-          gateHighlightUntilMs = now + 250
-          playSound("gateSelect")
-          onGateSelected?.(nearestGate.type)
-          console.log(`gate selected: ${nearestGate.label}`)
-
-          // Begin next wave immediately after selection
-          startWave(waveNumber + 1, nearestGate.type)
+          selectGate(nearestGate, now)
         }
       }
 
       // Vibe Jam portal collision checks (very cheap).
       if (!portalRedirecting) {
+        if (now < portalArmedAtMs) {
+          // Not armed yet.
+        } else {
         const p = camera.position
-        if (p.distanceTo(exitPortal.position) <= portalRadius) {
+        if (horizontalDistanceTo(p, exitPortal.position) <= portalTriggerRadius) {
           portalRedirecting = true
-          window.location.href = buildExitPortalUrl()
-          return
+          portalEnterStartedAtMs = now
+          portalRedirectAtMs = now + (300 + Math.random() * 500)
+          portalFade = 0
+          setInteractionHint("Entering portal...")
         }
         if (returnPortal) {
           const returnUrl = buildReturnPortalUrl()
-          if (returnUrl && p.distanceTo(returnPortal.position) <= portalRadius) {
+          if (returnUrl && horizontalDistanceTo(p, returnPortal.position) <= portalTriggerRadius) {
             portalRedirecting = true
             window.location.href = returnUrl
             return
           }
         }
+        }
+      }
+
+      // Portal entering effect + delayed redirect (once).
+      if (portalRedirecting && portalRedirectAtMs > 0) {
+        const t = Math.min(1, Math.max(0, (now - portalEnterStartedAtMs) / Math.max(1, portalRedirectAtMs - portalEnterStartedAtMs)))
+        // Quick ease-in
+        portalFade = Math.max(portalFade, 0.15 + 0.85 * (1 - Math.pow(1 - t, 3)))
+        const mat: any = portalFadePlane.material
+        mat.opacity = Math.min(0.92, portalFade)
+        // Keep overlay in front of camera
+        portalFadePlane.position.copy(camera.position).add(forward.clone().multiplyScalar(-0.65))
+        portalFadePlane.quaternion.copy(camera.quaternion)
+
+        if (now >= portalRedirectAtMs) {
+          window.location.href = buildExitPortalUrl()
+          return
+        }
+      } else {
+        ;(portalFadePlane.material as any).opacity = 0
       }
       renderer.render(scene, camera)
     }
