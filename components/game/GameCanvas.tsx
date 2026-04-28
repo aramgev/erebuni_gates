@@ -467,7 +467,7 @@ export function GameCanvas({
     portalGroup.name = "vibejam-portals"
     scene.add(portalGroup)
 
-    const makePortal = (name: string, color: number, label: string, position: THREE.Vector3) => {
+    const makePortal = (name: string, color: number, label: string, position: any) => {
       const group = new THREE.Group()
       group.name = name
       group.position.copy(position)
@@ -1198,6 +1198,30 @@ export function GameCanvas({
     const mouseSensitivity = 0.002
     const maxPitch = Math.PI / 2 - 0.01
 
+    // Touch controls (mobile):
+    // - Left thumb: movement joystick
+    // - Right thumb: look around
+    type TouchState = {
+      id: number
+      startX: number
+      startY: number
+      x: number
+      y: number
+      side: "left" | "right"
+      startAtMs: number
+      movedPx: number
+    }
+    const touches = new Map<number, TouchState>()
+    let joyX = 0
+    let joyY = 0
+    const isCoarsePointer = () => {
+      try {
+        return typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)")?.matches
+      } catch {
+        return false
+      }
+    }
+
     // Mouse look stays disabled until pointer lock (click).
 
     const onMouseDown = (e: MouseEvent) => {
@@ -1239,6 +1263,77 @@ export function GameCanvas({
       camera.rotation.set(pitch, yaw, 0, "YXZ")
     }
 
+    const updateJoystick = () => {
+      // Use the active left touch (if any)
+      const left = Array.from(touches.values()).find((t) => t.side === "left")
+      if (!left) {
+        joyX = 0
+        joyY = 0
+        return
+      }
+      const dx = left.x - left.startX
+      const dy = left.y - left.startY
+      const max = 60
+      joyX = Math.max(-1, Math.min(1, dx / max))
+      joyY = Math.max(-1, Math.min(1, dy / max))
+    }
+
+    const onTouchStart = (e: TouchEvent) => {
+      for (const t of Array.from(e.changedTouches)) {
+        const side: TouchState["side"] = t.clientX < window.innerWidth / 2 ? "left" : "right"
+        touches.set(t.identifier, {
+          id: t.identifier,
+          startX: t.clientX,
+          startY: t.clientY,
+          x: t.clientX,
+          y: t.clientY,
+          side,
+          startAtMs: performance.now(),
+          movedPx: 0,
+        })
+      }
+      updateJoystick()
+    }
+
+    const onTouchMove = (e: TouchEvent) => {
+      const lookSensitivity = 0.004
+      for (const t of Array.from(e.changedTouches)) {
+        const st = touches.get(t.identifier)
+        if (!st) continue
+        const dx = t.clientX - st.x
+        const dy = t.clientY - st.y
+        st.x = t.clientX
+        st.y = t.clientY
+        st.movedPx += Math.hypot(dx, dy)
+
+        if (st.side === "right") {
+          // Look even without pointer lock on mobile.
+          yaw -= dx * lookSensitivity
+          pitch -= dy * lookSensitivity
+          pitch = Math.max(-maxPitch, Math.min(maxPitch, pitch))
+          camera.rotation.set(pitch, yaw, 0, "YXZ")
+        }
+      }
+      updateJoystick()
+      // Prevent page scroll/zoom while touching game.
+      e.preventDefault()
+    }
+
+    const onTouchEnd = (e: TouchEvent) => {
+      for (const t of Array.from(e.changedTouches)) {
+        const st = touches.get(t.identifier)
+        touches.delete(t.identifier)
+        if (!st) continue
+
+        // Quick tap on the right side shoots.
+        if (st.side === "right") {
+          const dt = performance.now() - st.startAtMs
+          if (dt < 250 && st.movedPx < 12) shoot()
+        }
+      }
+      updateJoystick()
+    }
+
     const onKeyDown = (e: KeyboardEvent) => {
       keys.add(e.code)
       if (e.code === "KeyE") {
@@ -1255,6 +1350,10 @@ export function GameCanvas({
     window.addEventListener("mousemove", onMouseMove)
     window.addEventListener("keydown", onKeyDown)
     window.addEventListener("keyup", onKeyUp)
+    canvas.addEventListener("touchstart", onTouchStart, { passive: false })
+    canvas.addEventListener("touchmove", onTouchMove, { passive: false })
+    canvas.addEventListener("touchend", onTouchEnd)
+    canvas.addEventListener("touchcancel", onTouchEnd)
 
     const resize = () => {
       const { innerWidth: width, innerHeight: height, devicePixelRatio } = window
@@ -1292,6 +1391,12 @@ export function GameCanvas({
       if (keys.has("KeyS")) move.sub(forward)
       if (keys.has("KeyD")) move.add(right)
       if (keys.has("KeyA")) move.sub(right)
+      // Mobile joystick movement (coarse pointer only)
+      if (isCoarsePointer()) {
+        // joyY: down is +1; forward is -Z, so subtract joyY
+        move.add(forward.clone().multiplyScalar(-joyY))
+        move.add(right.clone().multiplyScalar(joyX))
+      }
       if (move.lengthSq() > 0) move.normalize()
 
       // Move + clamp (can't go outside platform / fall off edges)
@@ -1447,6 +1552,10 @@ export function GameCanvas({
       window.removeEventListener("mousemove", onMouseMove)
       window.removeEventListener("keydown", onKeyDown)
       window.removeEventListener("keyup", onKeyUp)
+      canvas.removeEventListener("touchstart", onTouchStart as any)
+      canvas.removeEventListener("touchmove", onTouchMove as any)
+      canvas.removeEventListener("touchend", onTouchEnd as any)
+      canvas.removeEventListener("touchcancel", onTouchEnd as any)
       document.removeEventListener("pointerlockchange", onPointerLockChange)
 
       clearEnemies()

@@ -48,7 +48,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="bg-background">
-      <body className={`${cinzel.variable} font-sans antialiased overflow-hidden`}>
+      <body className={`${cinzel.variable} font-sans antialiased`}>
         {children}
         {/* Vibe Jam 2026 entrant widget (required) */}
         <Script async src="https://vibej.am/2026/widget.js" strategy="afterInteractive" />

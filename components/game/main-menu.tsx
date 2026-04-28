@@ -18,13 +18,13 @@ export function MainMenu({
   onShowStory,
 }: MainMenuProps) {
   return (
-    <div className="absolute inset-0 z-20 overflow-hidden bg-[#08090d] text-[#f4ead2]">
+    <div className="absolute inset-0 z-20 overflow-y-auto overflow-x-hidden bg-[#08090d] text-[#f4ead2]">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_10%,rgba(190,92,32,0.22),transparent_36%),linear-gradient(180deg,rgba(12,13,18,0.25),#08090d_78%)]" />
       <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-[#c99337] to-transparent" />
       <div className="absolute -left-16 top-24 h-72 w-72 rotate-45 border border-[#c99337]/15" />
       <div className="absolute -right-20 bottom-20 h-80 w-80 rotate-45 border border-[#8e2f21]/20" />
 
-      <div className="relative z-10 flex min-h-screen flex-col px-5 py-6 md:px-10 lg:px-14">
+      <div className="relative z-10 flex min-h-screen flex-col px-5 py-6 pb-10 md:px-10 lg:px-14">
         <header className="mx-auto flex w-full max-w-6xl flex-col items-center gap-2 text-center">
           <div className="flex items-center gap-4 text-[#c99337]/80">
             <RuneMark className="h-7 w-7" />
@@ -39,8 +39,8 @@ export function MainMenu({
           </p>
         </header>
 
-        <main className="mx-auto grid w-full max-w-6xl flex-1 grid-cols-1 items-center gap-8 py-8 md:grid-cols-[0.95fr_1.05fr] md:gap-12 lg:gap-16">
-          <section className="relative flex min-h-[320px] items-end justify-center md:min-h-[560px]">
+        <main className="mx-auto grid w-full max-w-6xl flex-1 grid-cols-1 items-center gap-8 py-6 md:grid-cols-[0.95fr_1.05fr] md:gap-12 lg:gap-16">
+          <section className="relative flex min-h-[220px] items-end justify-center md:min-h-[560px]">
             <div className="absolute bottom-0 h-[76%] w-[78%] rounded-full bg-[#c99337]/10 blur-3xl" />
             <div className="absolute bottom-8 h-40 w-72 border-t border-[#c99337]/25 bg-gradient-to-t from-[#8e2f21]/20 to-transparent" />
             <Image
@@ -49,7 +49,7 @@ export function MainMenu({
               width={720}
               height={960}
               priority
-              className="relative z-10 max-h-[48vh] w-auto object-contain drop-shadow-[0_28px_40px_rgba(0,0,0,0.65)] md:max-h-[68vh]"
+              className="relative z-10 max-h-[38vh] w-auto object-contain drop-shadow-[0_28px_40px_rgba(0,0,0,0.65)] md:max-h-[68vh]"
             />
           </section>
 
@@ -68,11 +68,11 @@ export function MainMenu({
                 </p>
               </div>
 
-              <div className="flex flex-col gap-3 pt-2 sm:flex-row">
+              <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:flex-wrap">
                 <Button
                   onClick={onStartGame}
                   size="lg"
-                  className="h-14 border border-[#ffd98a]/50 bg-[#c99337] px-8 text-base font-bold uppercase tracking-[0.2em] text-[#140d08] shadow-[0_0_30px_rgba(201,147,55,0.36)] hover:bg-[#ffd98a]"
+                  className="h-14 w-full sm:w-auto border border-[#ffd98a]/50 bg-[#c99337] px-8 text-base font-bold uppercase tracking-[0.2em] text-[#140d08] shadow-[0_0_30px_rgba(201,147,55,0.36)] hover:bg-[#ffd98a]"
                 >
                   Start Game
                 </Button>
@@ -80,7 +80,7 @@ export function MainMenu({
                   onClick={onShowLeaderboard}
                   variant="outline"
                   size="lg"
-                  className="h-14 border-[#8e2f21]/80 bg-[#150d0d]/55 px-8 text-base font-semibold uppercase tracking-[0.18em] text-[#f4ead2] hover:border-[#c99337] hover:bg-[#8e2f21]/30 hover:text-[#ffd98a]"
+                  className="h-14 w-full sm:w-auto border-[#8e2f21]/80 bg-[#150d0d]/55 px-8 text-base font-semibold uppercase tracking-[0.18em] text-[#f4ead2] hover:border-[#c99337] hover:bg-[#8e2f21]/30 hover:text-[#ffd98a]"
                 >
                   Leaderboard
                 </Button>
@@ -88,7 +88,7 @@ export function MainMenu({
                   onClick={onShowHelp}
                   variant="outline"
                   size="lg"
-                  className="h-14 border-[#c99337]/50 bg-[#150d0d]/45 px-8 text-base font-semibold uppercase tracking-[0.18em] text-[#ffd98a] hover:border-[#ffd98a] hover:bg-[#c99337]/15 hover:text-[#ffd98a]"
+                  className="h-14 w-full sm:w-auto border-[#c99337]/50 bg-[#150d0d]/45 px-8 text-base font-semibold uppercase tracking-[0.18em] text-[#ffd98a] hover:border-[#ffd98a] hover:bg-[#c99337]/15 hover:text-[#ffd98a]"
                 >
                   How to Play
                 </Button>
@@ -96,7 +96,7 @@ export function MainMenu({
                   onClick={onShowStory}
                   variant="outline"
                   size="lg"
-                  className="h-14 border-[#c99337]/50 bg-[#150d0d]/45 px-8 text-base font-semibold uppercase tracking-[0.18em] text-[#ffd98a] hover:border-[#ffd98a] hover:bg-[#c99337]/15 hover:text-[#ffd98a]"
+                  className="h-14 w-full sm:w-auto border-[#c99337]/50 bg-[#150d0d]/45 px-8 text-base font-semibold uppercase tracking-[0.18em] text-[#ffd98a] hover:border-[#ffd98a] hover:bg-[#c99337]/15 hover:text-[#ffd98a]"
                 >
                   The Story
                 </Button>
