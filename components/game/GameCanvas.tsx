@@ -355,6 +355,8 @@ export function GameCanvas({
     const platformTopY = platformHeight + 0.5 // thickness=1
     const eyeHeightAbovePlatform = 1.6
     const playerHeightY = platformTopY + eyeHeightAbovePlatform
+    camera.position.set(0, playerHeightY, 7.5)
+    camera.lookAt(0, 8, -45)
 
     const frontWall = new THREE.Mesh(
       new THREE.BoxGeometry(platformWidth + 8, platformHeight, 3.2),
@@ -495,10 +497,12 @@ export function GameCanvas({
     const crenelGeo = new THREE.BoxGeometry(1.15, 1.05, 0.95)
     for (let i = 0; i < 17; i++) {
       const x = -platformWidth / 2 + 1.2 + i * 2.35
-      const frontCrenel = new THREE.Mesh(crenelGeo, basaltLightMat)
-      frontCrenel.name = `front-crenel-${i + 1}`
-      frontCrenel.position.set(x, platformTopY + defenseLineHeight + 0.5, 0.5)
-      scene.add(frontCrenel)
+      if (Math.abs(x) > 7) {
+        const frontCrenel = new THREE.Mesh(crenelGeo, basaltLightMat)
+        frontCrenel.name = `front-crenel-${i + 1}`
+        frontCrenel.position.set(x, platformTopY + defenseLineHeight + 0.5, 0.5)
+        scene.add(frontCrenel)
+      }
 
       const rearCrenel = new THREE.Mesh(crenelGeo, basaltLightMat)
       rearCrenel.name = `rear-crenel-${i + 1}`
