@@ -16,6 +16,12 @@ type Enemy = {
   breached: boolean
 }
 
+declare global {
+  interface Window {
+    webkitAudioContext?: typeof AudioContext
+  }
+}
+
 type GateType = "fire" | "shadow" | "storm"
 type EnemyKind = "shadow-warrior" | "stone-golem" | "spirit"
 type Gate = {
@@ -51,6 +57,72 @@ export function GameCanvas({
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
+
+    type GameSound = "bow" | "hit" | "enemyDeath" | "waveStart" | "gateSelect"
+    let audioContext: AudioContext | null = null
+
+    const getAudioContext = () => {
+      const AudioContextCtor = window.AudioContext || window.webkitAudioContext
+      if (!AudioContextCtor) return null
+      if (!audioContext) audioContext = new AudioContextCtor()
+      if (audioContext.state === "suspended") void audioContext.resume()
+      return audioContext
+    }
+
+    const playTone = (
+      ctx: AudioContext,
+      frequency: number,
+      duration: number,
+      type: OscillatorType,
+      gain: number,
+      delay = 0,
+    ) => {
+      const osc = ctx.createOscillator()
+      const amp = ctx.createGain()
+      const start = ctx.currentTime + delay
+      const end = start + duration
+      osc.type = type
+      osc.frequency.setValueAtTime(frequency, start)
+      amp.gain.setValueAtTime(0.0001, start)
+      amp.gain.exponentialRampToValueAtTime(gain, start + 0.01)
+      amp.gain.exponentialRampToValueAtTime(0.0001, end)
+      osc.connect(amp)
+      amp.connect(ctx.destination)
+      osc.start(start)
+      osc.stop(end + 0.02)
+    }
+
+    const playSound = (sound: GameSound) => {
+      const ctx = getAudioContext()
+      if (!ctx) return
+
+      if (sound === "bow") {
+        playTone(ctx, 180, 0.07, "triangle", 0.08)
+        playTone(ctx, 520, 0.035, "sine", 0.035, 0.015)
+        return
+      }
+      if (sound === "hit") {
+        playTone(ctx, 820, 0.055, "square", 0.045)
+        playTone(ctx, 240, 0.08, "triangle", 0.035, 0.02)
+        return
+      }
+      if (sound === "enemyDeath") {
+        playTone(ctx, 190, 0.16, "sawtooth", 0.06)
+        playTone(ctx, 95, 0.2, "triangle", 0.045, 0.04)
+        return
+      }
+      if (sound === "waveStart") {
+        playTone(ctx, 220, 0.12, "triangle", 0.055)
+        playTone(ctx, 330, 0.12, "triangle", 0.05, 0.11)
+        playTone(ctx, 440, 0.16, "triangle", 0.045, 0.22)
+        return
+      }
+      if (sound === "gateSelect") {
+        playTone(ctx, 392, 0.1, "sine", 0.055)
+        playTone(ctx, 588, 0.12, "sine", 0.05, 0.09)
+        playTone(ctx, 784, 0.18, "sine", 0.045, 0.18)
+      }
+    }
 
     const scene = new THREE.Scene()
     const fogColor = new THREE.Color(0x263049)
@@ -738,6 +810,7 @@ export function GameCanvas({
       if (idx === -1) return false
       const [enemy] = enemies.splice(idx, 1)
       scene.remove(enemy.mesh)
+      playSound("enemyDeath")
 
       const mat = enemy.mesh.material
       if (mat?.dispose) mat.dispose()
@@ -848,6 +921,7 @@ export function GameCanvas({
 
       console.log(`wave started: ${wave}`, "modifier:", activeModifier ?? "none")
       console.log("current gamePhase", phase.mode)
+      playSound("waveStart")
     }
 
     const setGatesVisible = (visible: boolean) => {
@@ -964,12 +1038,14 @@ export function GameCanvas({
         .add(forward.clone().multiplyScalar(0.8))
       const to = hit ? hit.point.clone() : from.clone().add(forward.clone().multiplyScalar(42))
       spawnArrowShot(from, to)
+      playSound("bow")
       recoilUntilMs = performance.now() + 100
       if (!hit) return
 
       const obj: any = hit.object
       const enemy = enemies.find((e) => e.mesh === obj)
       spawnHitFlash(hit.point)
+      playSound("hit")
       if (enemy) {
         console.log("[shot enemy]", obj.name || obj.uuid)
         damageEnemy(enemy, 1)
@@ -1191,6 +1267,7 @@ export function GameCanvas({
         if (nearestGateInRange && nearestGate) {
           highlightedGate = nearestGate.type
           gateHighlightUntilMs = now + 250
+          playSound("gateSelect")
           onGateSelected?.(nearestGate.type)
           console.log(`gate selected: ${nearestGate.label}`)
 

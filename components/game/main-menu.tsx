@@ -8,12 +8,14 @@ interface MainMenuProps {
   onStartGame: () => void
   onShowLeaderboard: () => void
   onShowHelp: () => void
+  onShowStory: () => void
 }
 
 export function MainMenu({
   onStartGame,
   onShowLeaderboard,
   onShowHelp,
+  onShowStory,
 }: MainMenuProps) {
   return (
     <div className="absolute inset-0 z-20 overflow-hidden bg-[#08090d] text-[#f4ead2]">
@@ -89,6 +91,14 @@ export function MainMenu({
                   className="h-14 border-[#c99337]/50 bg-[#150d0d]/45 px-8 text-base font-semibold uppercase tracking-[0.18em] text-[#ffd98a] hover:border-[#ffd98a] hover:bg-[#c99337]/15 hover:text-[#ffd98a]"
                 >
                   How to Play
+                </Button>
+                <Button
+                  onClick={onShowStory}
+                  variant="outline"
+                  size="lg"
+                  className="h-14 border-[#c99337]/50 bg-[#150d0d]/45 px-8 text-base font-semibold uppercase tracking-[0.18em] text-[#ffd98a] hover:border-[#ffd98a] hover:bg-[#c99337]/15 hover:text-[#ffd98a]"
+                >
+                  The Story
                 </Button>
               </div>
 

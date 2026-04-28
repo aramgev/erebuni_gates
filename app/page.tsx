@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { GameCanvas, MainMenu, GameHUD, GameOver, HelpModal } from "@/components/game"
+import { useEffect, useRef, useState } from "react"
+import { GameCanvas, MainMenu, GameHUD, GameOver, HelpModal, StoryModal } from "@/components/game"
 
 type GameState = "menu" | "playing" | "gameover"
 type GateType = "fire" | "shadow" | "storm"
@@ -16,6 +16,28 @@ export default function GatesOfErebuni() {
   } | null>(null)
   const [interactionHint, setInteractionHint] = useState("")
   const [helpOpen, setHelpOpen] = useState(false)
+  const [storyOpen, setStoryOpen] = useState(false)
+  const musicRef = useRef<HTMLAudioElement | null>(null)
+
+  const startGameMusic = () => {
+    if (!musicRef.current) {
+      const music = new Audio("/ErebuniDefense.mp3")
+      music.loop = true
+      music.volume = 0.45
+      musicRef.current = music
+    }
+
+    musicRef.current.currentTime = 0
+    void musicRef.current.play().catch((error) => {
+      console.warn("Could not start background music", error)
+    })
+  }
+
+  const stopGameMusic = () => {
+    if (!musicRef.current) return
+    musicRef.current.pause()
+    musicRef.current.currentTime = 0
+  }
 
   const handleStartGame = () => {
     setHealth(100)
@@ -23,6 +45,8 @@ export default function GatesOfErebuni() {
     setActiveBlessing(null)
     setInteractionHint("")
     setHelpOpen(false)
+    setStoryOpen(false)
+    startGameMusic()
     setGameState("playing")
   }
 
@@ -42,6 +66,8 @@ export default function GatesOfErebuni() {
 
   const handleReturnToMenu = () => {
     setHelpOpen(false)
+    setStoryOpen(false)
+    stopGameMusic()
     setGameState("menu")
   }
 
@@ -50,8 +76,15 @@ export default function GatesOfErebuni() {
   }
 
   useEffect(() => {
-    if (gameState === "playing" && health <= 0) setGameState("gameover")
+    if (gameState === "playing" && health <= 0) {
+      stopGameMusic()
+      setGameState("gameover")
+    }
   }, [gameState, health])
+
+  useEffect(() => {
+    return () => stopGameMusic()
+  }, [])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -104,6 +137,7 @@ export default function GatesOfErebuni() {
           onStartGame={handleStartGame}
           onShowLeaderboard={handleShowLeaderboard}
           onShowHelp={handleOpenHelp}
+          onShowStory={() => setStoryOpen(true)}
         />
       )}
 
@@ -116,6 +150,7 @@ export default function GatesOfErebuni() {
       )}
 
       <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <StoryModal open={storyOpen} onClose={() => setStoryOpen(false)} />
     </main>
   )
 }
