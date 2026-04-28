@@ -856,14 +856,19 @@ export function GameCanvas({
       scene.children.filter((o: any) => typeof o?.name === "string" && o.name.startsWith("tower")),
     )
 
-    const effects: { obj: any; expiresAtMs: number }[] = []
+    const effects: { obj: any; expiresAtMs: number; update?: (now: number) => void }[] = []
 
-    const arrowShaftGeo = new THREE.CylinderGeometry(0.035, 0.035, 1.35, 8)
-    const arrowHeadGeo = new THREE.ConeGeometry(0.12, 0.34, 10)
-    const arrowFeatherGeo = new THREE.BoxGeometry(0.28, 0.04, 0.12)
+    const arrowShaftGeo = new THREE.CylinderGeometry(0.025, 0.025, 1.2, 8)
+    const arrowHeadGeo = new THREE.ConeGeometry(0.09, 0.28, 10)
+    const arrowFeatherGeo = new THREE.BoxGeometry(0.22, 0.035, 0.1)
     const arrowShaftMat = new THREE.MeshBasicMaterial({ color: 0x6f4322 })
-    const arrowHeadMat = new THREE.MeshBasicMaterial({ color: 0xd8d2bd })
+    const arrowHeadMat = new THREE.MeshBasicMaterial({ color: 0xc99337 })
     const arrowFeatherMat = new THREE.MeshBasicMaterial({ color: 0xb31f17 })
+    const arrowTrailMat = new THREE.LineBasicMaterial({
+      color: 0xffd98a,
+      transparent: true,
+      opacity: 0.55,
+    })
 
     const spawnArrowShot = (from: any, to: any) => {
       const direction = to.clone().sub(from)
@@ -873,8 +878,7 @@ export function GameCanvas({
 
       const arrow = new THREE.Group()
       arrow.name = "visible-arrow-shot"
-      const midpoint = from.clone().add(direction.clone().multiplyScalar(Math.min(distance * 0.42, 7)))
-      arrow.position.copy(midpoint)
+      arrow.position.copy(from)
       arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction)
 
       const shaft = new THREE.Mesh(arrowShaftGeo, arrowShaftMat)
@@ -897,13 +901,31 @@ export function GameCanvas({
       featherB.rotation.y = Math.PI / 2
       arrow.add(featherB)
 
+      const trailGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, -1.45, 0),
+        new THREE.Vector3(0, -0.25, 0),
+      ])
+      const trail = new THREE.Line(trailGeo, arrowTrailMat)
+      trail.name = "arrow-glowing-trail"
+      arrow.add(trail)
+
       scene.add(arrow)
-      effects.push({ obj: arrow, expiresAtMs: performance.now() + 180 })
+      const startedAtMs = performance.now()
+      const durationMs = 260
+      effects.push({
+        obj: arrow,
+        expiresAtMs: startedAtMs + durationMs,
+        update: (now) => {
+          const t = Math.min(1, (now - startedAtMs) / durationMs)
+          const eased = 1 - Math.pow(1 - t, 3)
+          arrow.position.copy(from).lerp(to, eased)
+        },
+      })
     }
 
     const spawnHitFlash = (point: any) => {
       const mat = new THREE.SpriteMaterial({
-        color: 0xffffff,
+        color: 0xffd98a,
         transparent: true,
         opacity: 0.9,
         depthWrite: false,
@@ -911,25 +933,33 @@ export function GameCanvas({
       const s = new THREE.Sprite(mat)
       s.name = "hit-flash"
       s.position.copy(point)
-      s.scale.set(0.8, 0.8, 1)
+      s.scale.set(0.55, 0.55, 1)
       scene.add(s)
-      effects.push({ obj: s, expiresAtMs: performance.now() + 120 })
+      effects.push({ obj: s, expiresAtMs: performance.now() + 140 })
     }
+
+    let recoilUntilMs = 0
 
     const shoot = () => {
       raycaster.setFromCamera(aim, camera)
       const enemyMeshes = enemies.map((e) => e.mesh)
       const hits = raycaster.intersectObjects(enemyMeshes.concat(shootables), false)
       const hit = hits[0]
-      const from = camera.position.clone()
-      const to = hit ? hit.point.clone() : from.clone().add(forward.clone().multiplyScalar(14))
+      const down = new THREE.Vector3(0, -1, 0)
+      const from = camera.position
+        .clone()
+        .add(right.clone().multiplyScalar(0.35))
+        .add(down.multiplyScalar(0.25))
+        .add(forward.clone().multiplyScalar(0.8))
+      const to = hit ? hit.point.clone() : from.clone().add(forward.clone().multiplyScalar(42))
       spawnArrowShot(from, to)
+      recoilUntilMs = performance.now() + 100
       if (!hit) return
 
       const obj: any = hit.object
       const enemy = enemies.find((e) => e.mesh === obj)
+      spawnHitFlash(hit.point)
       if (enemy) {
-        spawnHitFlash(hit.point)
         console.log("[shot enemy]", obj.name || obj.uuid)
         damageEnemy(enemy, 1)
         return
@@ -1072,9 +1102,16 @@ export function GameCanvas({
       // Cleanup transient effects
       for (let i = effects.length - 1; i >= 0; i--) {
         const fx = effects[i]
+        fx.update?.(now)
         if (now < fx.expiresAtMs) continue
         scene.remove(fx.obj)
-        if (fx.obj instanceof THREE.Line) {
+        if (fx.obj instanceof THREE.Group) {
+          fx.obj.traverse((child: any) => {
+            if (child instanceof THREE.Mesh || child instanceof THREE.Line) {
+              child.geometry.dispose()
+            }
+          })
+        } else if (fx.obj instanceof THREE.Line) {
           fx.obj.geometry.dispose()
           fx.obj.material.dispose()
         } else if (fx.obj instanceof THREE.Sprite) {
@@ -1109,6 +1146,13 @@ export function GameCanvas({
           ? `Press E to choose ${nearestGate.label}`
           : "",
       )
+
+      if (now < recoilUntilMs) {
+        const t = 1 - (recoilUntilMs - now) / 100
+        camera.rotation.set(pitch + Math.sin(t * Math.PI) * 0.018, yaw, 0, "YXZ")
+      } else {
+        camera.rotation.set(pitch, yaw, 0, "YXZ")
+      }
 
       for (const gate of gates) {
         if (!gate.glow) continue
