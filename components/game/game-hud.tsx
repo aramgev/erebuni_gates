@@ -11,6 +11,7 @@ interface GameHUDProps {
     icon: string
   } | null
   interactionHint?: string
+  onShowHelp?: () => void
 }
 
 export function GameHUD({
@@ -19,6 +20,7 @@ export function GameHUD({
   gatesSurvived,
   activeBlessing,
   interactionHint,
+  onShowHelp,
 }: GameHUDProps) {
   const healthPercentage = (health / maxHealth) * 100
 
@@ -73,9 +75,19 @@ export function GameHUD({
 
         {/* Active blessing - Top right */}
         <div className="flex flex-col items-end gap-1.5">
-          <span className="text-xs text-muted-foreground tracking-wider uppercase">
-            Blessing
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground tracking-wider uppercase">
+              Blessing
+            </span>
+            <button
+              type="button"
+              onClick={onShowHelp}
+              className="pointer-events-auto flex h-8 w-8 items-center justify-center rounded-sm border border-primary/40 bg-secondary/60 text-sm font-bold text-primary backdrop-blur-sm transition-colors hover:bg-primary/20"
+              aria-label="Open help"
+            >
+              ?
+            </button>
+          </div>
           {activeBlessing ? (
             <div className="flex items-center gap-2 px-3 py-1.5 bg-secondary/50 border border-border rounded-sm">
               <span className="text-lg">{activeBlessing.icon}</span>

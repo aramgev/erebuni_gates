@@ -33,13 +33,20 @@ export function GameCanvas({
   onEnemyKilled,
   onGateSelected,
   onInteractionHintChange,
+  isPaused = false,
 }: {
   onPlayerHit?: (damage: number) => void
   onEnemyKilled?: () => void
   onGateSelected?: (gate: GateType | null) => void
   onInteractionHintChange?: (hint: string) => void
+  isPaused?: boolean
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const pausedRef = useRef(isPaused)
+
+  useEffect(() => {
+    pausedRef.current = isPaused
+  }, [isPaused])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -1051,6 +1058,11 @@ export function GameCanvas({
       const now = performance.now()
       const dt = Math.min((now - lastT) / 1000, 0.05)
       lastT = now
+
+      if (pausedRef.current) {
+        renderer.render(scene, camera)
+        return
+      }
 
       // Direction vectors from yaw (keep movement on the XZ plane)
       forward.set(0, 0, -1).applyAxisAngle(worldUp, yaw).normalize()

@@ -7,9 +7,14 @@ import { Button } from "@/components/ui/button"
 interface MainMenuProps {
   onStartGame: () => void
   onShowLeaderboard: () => void
+  onShowHelp: () => void
 }
 
-export function MainMenu({ onStartGame, onShowLeaderboard }: MainMenuProps) {
+export function MainMenu({
+  onStartGame,
+  onShowLeaderboard,
+  onShowHelp,
+}: MainMenuProps) {
   return (
     <div className="absolute inset-0 z-20 overflow-hidden bg-[#08090d] text-[#f4ead2]">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_10%,rgba(190,92,32,0.22),transparent_36%),linear-gradient(180deg,rgba(12,13,18,0.25),#08090d_78%)]" />
@@ -76,6 +81,14 @@ export function MainMenu({ onStartGame, onShowLeaderboard }: MainMenuProps) {
                   className="h-14 border-[#8e2f21]/80 bg-[#150d0d]/55 px-8 text-base font-semibold uppercase tracking-[0.18em] text-[#f4ead2] hover:border-[#c99337] hover:bg-[#8e2f21]/30 hover:text-[#ffd98a]"
                 >
                   Leaderboard
+                </Button>
+                <Button
+                  onClick={onShowHelp}
+                  variant="outline"
+                  size="lg"
+                  className="h-14 border-[#c99337]/50 bg-[#150d0d]/45 px-8 text-base font-semibold uppercase tracking-[0.18em] text-[#ffd98a] hover:border-[#ffd98a] hover:bg-[#c99337]/15 hover:text-[#ffd98a]"
+                >
+                  How to Play
                 </Button>
               </div>
 

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { GameCanvas, MainMenu, GameHUD, GameOver } from "@/components/game"
+import { GameCanvas, MainMenu, GameHUD, GameOver, HelpModal } from "@/components/game"
 
 type GameState = "menu" | "playing" | "gameover"
 type GateType = "fire" | "shadow" | "storm"
@@ -15,12 +15,14 @@ export default function GatesOfErebuni() {
     icon: string
   } | null>(null)
   const [interactionHint, setInteractionHint] = useState("")
+  const [helpOpen, setHelpOpen] = useState(false)
 
   const handleStartGame = () => {
     setHealth(100)
     setGatesSurvived(0)
     setActiveBlessing(null)
     setInteractionHint("")
+    setHelpOpen(false)
     setGameState("playing")
   }
 
@@ -29,11 +31,17 @@ export default function GatesOfErebuni() {
     console.log("Show leaderboard")
   }
 
+  const handleOpenHelp = () => {
+    if (document.pointerLockElement) document.exitPointerLock()
+    setHelpOpen(true)
+  }
+
   const handlePlayAgain = () => {
     handleStartGame()
   }
 
   const handleReturnToMenu = () => {
+    setHelpOpen(false)
     setGameState("menu")
   }
 
@@ -44,6 +52,17 @@ export default function GatesOfErebuni() {
   useEffect(() => {
     if (gameState === "playing" && health <= 0) setGameState("gameover")
   }, [gameState, health])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "?") return
+      event.preventDefault()
+      handleOpenHelp()
+    }
+
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [])
 
   return (
     <main className="relative w-screen h-screen overflow-hidden bg-background">
@@ -63,6 +82,7 @@ export default function GatesOfErebuni() {
             )
           }}
           onInteractionHintChange={setInteractionHint}
+          isPaused={helpOpen}
         />
       )}
 
@@ -74,6 +94,7 @@ export default function GatesOfErebuni() {
           gatesSurvived={gatesSurvived}
           activeBlessing={activeBlessing}
           interactionHint={interactionHint}
+          onShowHelp={handleOpenHelp}
         />
       )}
 
@@ -82,6 +103,7 @@ export default function GatesOfErebuni() {
         <MainMenu
           onStartGame={handleStartGame}
           onShowLeaderboard={handleShowLeaderboard}
+          onShowHelp={handleOpenHelp}
         />
       )}
 
@@ -92,6 +114,8 @@ export default function GatesOfErebuni() {
           onReturnToMenu={handleReturnToMenu}
         />
       )}
+
+      <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
     </main>
   )
 }
