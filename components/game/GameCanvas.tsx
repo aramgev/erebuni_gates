@@ -5,6 +5,7 @@ import * as THREE from "three"
 
 type Enemy = {
   mesh: any
+  kind: EnemyKind
   speed: number
   breachDamage: number
   health: number
@@ -16,6 +17,7 @@ type Enemy = {
 }
 
 type GateType = "fire" | "shadow" | "storm"
+type EnemyKind = "shadow-warrior" | "stone-golem" | "spirit"
 type Gate = {
   type: GateType
   label: string
@@ -44,16 +46,16 @@ export function GameCanvas({
     if (!canvas) return
 
     const scene = new THREE.Scene()
-    const fogColor = new THREE.Color(0x0b1430) // dark blue fog
-    scene.fog = new THREE.Fog(fogColor.getHex(), 10, 80)
+    const fogColor = new THREE.Color(0x263049)
+    scene.fog = new THREE.Fog(fogColor.getHex(), 24, 135)
 
     // "Gradient-style" sky via a lightweight skydome (no shaders)
-    scene.background = new THREE.Color(0x050914)
+    scene.background = new THREE.Color(0x1a2237)
     const skyGeo = new THREE.SphereGeometry(500, 20, 14)
     const skyPos = skyGeo.attributes.position
     const skyColors: number[] = []
-    const skyTop = new THREE.Color(0x050914)
-    const skyHorizon = new THREE.Color(0x142a5a)
+    const skyTop = new THREE.Color(0x11182b)
+    const skyHorizon = new THREE.Color(0xd28b5b)
     const skyTmp = new THREE.Color()
     for (let i = 0; i < skyPos.count; i++) {
       const y = skyPos.getY(i)
@@ -90,15 +92,15 @@ export function GameCanvas({
     renderer.shadowMap.enabled = false
     renderer.outputColorSpace = THREE.SRGBColorSpace
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.55)
+    const ambientLight = new THREE.AmbientLight(0xffead0, 0.48)
     scene.add(ambientLight)
 
-    // Soft directional light from above
-    const directionalLight = new THREE.DirectionalLight(0xcad8ff, 0.9)
-    directionalLight.position.set(0, 30, 10)
+    // Warm sunrise/sunset light from over the battlefield.
+    const directionalLight = new THREE.DirectionalLight(0xffb36f, 1.15)
+    directionalLight.position.set(-28, 30, -42)
     scene.add(directionalLight)
 
-    const hemi = new THREE.HemisphereLight(0x86b6ff, 0x1b140f, 0.4)
+    const hemi = new THREE.HemisphereLight(0xffd5a2, 0x211711, 0.45)
     scene.add(hemi)
 
     // Fortress defense environment
@@ -121,6 +123,32 @@ export function GameCanvas({
       color: 0xd8d0b4,
       roughness: 0.95,
       metalness: 0,
+    })
+    const redClothMat = new THREE.MeshBasicMaterial({
+      color: 0x8b241c,
+      side: THREE.DoubleSide,
+    })
+    const goldFlatMat = new THREE.MeshBasicMaterial({
+      color: 0xd2a33f,
+      side: THREE.DoubleSide,
+    })
+    const mountainMat = new THREE.MeshBasicMaterial({
+      color: 0x384050,
+      fog: false,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    })
+    const mountainShadowMat = new THREE.MeshBasicMaterial({
+      color: 0x262c3a,
+      fog: false,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    })
+    const mountainSnowMat = new THREE.MeshBasicMaterial({
+      color: 0xf0eadc,
+      fog: false,
+      side: THREE.DoubleSide,
+      depthWrite: false,
     })
     const basaltMat = new THREE.MeshStandardMaterial({
       color: 0x242421,
@@ -249,6 +277,76 @@ export function GameCanvas({
       scene.add(rock)
     }
 
+    const makeMountainShape = (points: Array<[number, number]>) => {
+      const shape = new THREE.Shape()
+      shape.moveTo(points[0][0], points[0][1])
+      for (let i = 1; i < points.length; i++) shape.lineTo(points[i][0], points[i][1])
+      shape.lineTo(points[0][0], points[0][1])
+      return new THREE.ShapeGeometry(shape)
+    }
+
+    const araratGroup = new THREE.Group()
+    araratGroup.name = "distant-mount-ararat"
+    araratGroup.position.set(0, 2.3, -190)
+
+    const greaterArarat = new THREE.Mesh(
+      makeMountainShape([
+        [-92, 0],
+        [-46, 8],
+        [-8, 52],
+        [28, 9],
+        [76, 0],
+      ]),
+      mountainMat,
+    )
+    greaterArarat.name = "greater-ararat-cone"
+    araratGroup.add(greaterArarat)
+
+    const greaterSnow = new THREE.Mesh(
+      makeMountainShape([
+        [-22, 31],
+        [-8, 52],
+        [8, 32],
+        [2, 36],
+        [-5, 34],
+        [-13, 38],
+      ]),
+      mountainSnowMat,
+    )
+    greaterSnow.name = "greater-ararat-snow-cap"
+    greaterSnow.position.z = 0.02
+    araratGroup.add(greaterSnow)
+
+    const lesserArarat = new THREE.Mesh(
+      makeMountainShape([
+        [16, 0],
+        [52, 6],
+        [78, 31],
+        [106, 5],
+        [132, 0],
+      ]),
+      mountainShadowMat,
+    )
+    lesserArarat.name = "lesser-ararat-cone"
+    lesserArarat.position.z = -0.01
+    araratGroup.add(lesserArarat)
+
+    const lesserSnow = new THREE.Mesh(
+      makeMountainShape([
+        [68, 20],
+        [78, 31],
+        [90, 19],
+        [84, 21],
+        [77, 20],
+      ]),
+      mountainSnowMat,
+    )
+    lesserSnow.name = "lesser-ararat-snow-cap"
+    lesserSnow.position.z = 0.03
+    araratGroup.add(lesserSnow)
+
+    scene.add(araratGroup)
+
     // Elevated fortress wall platform
     const platformHeight = 8
     const platformWidth = 40
@@ -298,6 +396,36 @@ export function GameCanvas({
     whiteBand.position.set(0, platformHeight - 2.05, -1.48)
     scene.add(whiteBand)
 
+    const addFacadePlane = (
+      name: string,
+      width: number,
+      height: number,
+      x: number,
+      y: number,
+      mat: any,
+      rotationZ = 0,
+    ) => {
+      const plane = new THREE.Mesh(new THREE.PlaneGeometry(width, height), mat)
+      plane.name = name
+      plane.position.set(x, y, -1.64)
+      plane.rotation.z = rotationZ
+      scene.add(plane)
+      return plane
+    }
+
+    const motifXs = [-18, -12, -6, 6, 12, 18]
+    for (const x of motifXs) {
+      addFacadePlane(`urartu-red-triangle-left-${x}`, 0.12, 1.05, x - 0.34, platformHeight - 2.92, redMat, Math.PI / 4)
+      addFacadePlane(`urartu-red-triangle-right-${x}`, 0.12, 1.05, x + 0.34, platformHeight - 2.92, redMat, -Math.PI / 4)
+      addFacadePlane(`urartu-gold-diamond-${x}`, 0.45, 0.45, x, platformHeight - 3.55, goldFlatMat, Math.PI / 4)
+      addFacadePlane(`urartu-white-divider-${x}`, 0.08, 1.5, x, platformHeight - 3.02, whitePaintMat)
+    }
+
+    for (const y of [platformHeight - 4.45, platformHeight - 5.15]) {
+      addFacadePlane(`gold-horizontal-wall-strip-${y}`, platformWidth + 5, 0.09, 0, y, goldFlatMat)
+      addFacadePlane(`white-horizontal-wall-strip-${y}`, platformWidth + 4.2, 0.08, 0, y - 0.18, whitePaintMat)
+    }
+
     const blockGeo = new THREE.BoxGeometry(3.4, 0.55, 0.14)
     for (let row = 0; row < 7; row++) {
       const y = 1.15 + row * 0.92
@@ -308,6 +436,37 @@ export function GameCanvas({
         block.position.set(x + stagger, y, -1.5)
         scene.add(block)
       }
+    }
+
+    const addBanner = (x: number, y: number, name: string) => {
+      const banner = addFacadePlane(`${name}-red-banner`, 2.3, 3.1, x, y, redClothMat)
+      banner.position.z = -1.72
+
+      const pole = addFacadePlane(`${name}-gold-top-rod`, 2.65, 0.1, x, y + 1.58, goldFlatMat)
+      pole.position.z = -1.74
+
+      const runeStem = addFacadePlane(`${name}-gold-rune-stem`, 0.16, 1.55, x, y + 0.05, goldFlatMat)
+      runeStem.position.z = -1.76
+      const runeCross = addFacadePlane(`${name}-gold-rune-cross`, 1.0, 0.14, x, y + 0.38, goldFlatMat)
+      runeCross.position.z = -1.76
+      const runeDiamond = addFacadePlane(`${name}-gold-rune-diamond`, 0.55, 0.55, x, y - 0.55, goldFlatMat, Math.PI / 4)
+      runeDiamond.position.z = -1.76
+    }
+
+    addBanner(-15.5, 3.9, "left-urartu")
+    addBanner(0, 3.9, "center-urartu")
+    addBanner(15.5, 3.9, "right-urartu")
+
+    const stairMat = new THREE.MeshStandardMaterial({
+      color: 0x4a4941,
+      roughness: 1,
+      metalness: 0,
+    })
+    for (let i = 0; i < 6; i++) {
+      const stair = new THREE.Mesh(new THREE.BoxGeometry(12 - i * 0.8, 0.35, 2.2), stairMat)
+      stair.name = `outer-stone-stair-${i + 1}`
+      stair.position.set(0, 0.18 + i * 0.34, -4.2 + i * 1.55)
+      scene.add(stair)
     }
 
     // Front battlement parapet (waist-height so player can see over it)
@@ -501,14 +660,25 @@ export function GameCanvas({
     spawnGate("shadow", "Shadow", 11, gateWallZ)
 
     // Enemies (sprites; always face camera automatically)
-    const enemyTexturePaths = [
-      "/assets/enemies/enemy1.png",
-      "/assets/enemies/enemy2.png",
-      "/assets/enemies/enemy3.png",
-      "/assets/enemies/enemy4.png",
-      "/assets/enemies/enemy5.png",
-    ]
-    const enemyTextures = enemyTexturePaths.map((p) => textureLoader.load(p))
+    const enemyTexturePaths: Record<EnemyKind, string[]> = {
+      "shadow-warrior": [
+        "/assets/enemies/enemy1.png",
+        "/assets/enemies/enemy2.png",
+      ],
+      "stone-golem": ["/assets/enemies/enemy4.png"],
+      spirit: ["/assets/enemies/enemy5.png"],
+    }
+    const enemyCatalog = (Object.entries(enemyTexturePaths) as Array<[EnemyKind, string[]]>).flatMap(
+      ([kind, paths]) =>
+        paths.map((path) => {
+          const texture = textureLoader.load(path)
+          texture.colorSpace = THREE.SRGBColorSpace
+          texture.minFilter = THREE.LinearFilter
+          texture.magFilter = THREE.LinearFilter
+          texture.needsUpdate = true
+          return { kind, path, texture }
+        }),
+    )
 
     const enemies: Enemy[] = []
     const spawnEnemy = (
@@ -519,10 +689,16 @@ export function GameCanvas({
       breachDamage: number,
       health: number,
     ) => {
-      const tex = enemyTextures[Math.floor(Math.random() * enemyTextures.length)]
+      const enemyAsset = enemyCatalog[Math.floor(Math.random() * enemyCatalog.length)]
       const material = new THREE.SpriteMaterial({
-        map: tex,
-        // alphaTest: 0.5,
+        map: enemyAsset.texture,
+        color: new THREE.Color(0xffffff),
+        transparent: true,
+        alphaTest: 0.1,
+        depthWrite: false,
+        depthTest: true,
+        opacity: 1,
+        fog: false,
       })
       const sprite = new THREE.Sprite(material)
       sprite.name = name
@@ -534,6 +710,7 @@ export function GameCanvas({
       console.log("enemy spawned", name, "pos", sprite.position.toArray())
       enemies.push({
         mesh: sprite,
+        kind: enemyAsset.kind,
         speed,
         breachDamage,
         health,
@@ -681,13 +858,47 @@ export function GameCanvas({
 
     const effects: { obj: any; expiresAtMs: number }[] = []
 
-    const spawnShotRay = (from: any, to: any) => {
-      const geo = new THREE.BufferGeometry().setFromPoints([from, to])
-      const mat = new THREE.LineBasicMaterial({ color: 0xffd6a3, transparent: true, opacity: 0.9 })
-      const line = new THREE.Line(geo, mat)
-      line.name = "shot-ray"
-      scene.add(line)
-      effects.push({ obj: line, expiresAtMs: performance.now() + 50 })
+    const arrowShaftGeo = new THREE.CylinderGeometry(0.035, 0.035, 1.35, 8)
+    const arrowHeadGeo = new THREE.ConeGeometry(0.12, 0.34, 10)
+    const arrowFeatherGeo = new THREE.BoxGeometry(0.28, 0.04, 0.12)
+    const arrowShaftMat = new THREE.MeshBasicMaterial({ color: 0x6f4322 })
+    const arrowHeadMat = new THREE.MeshBasicMaterial({ color: 0xd8d2bd })
+    const arrowFeatherMat = new THREE.MeshBasicMaterial({ color: 0xb31f17 })
+
+    const spawnArrowShot = (from: any, to: any) => {
+      const direction = to.clone().sub(from)
+      const distance = direction.length()
+      if (distance <= 0.001) return
+      direction.normalize()
+
+      const arrow = new THREE.Group()
+      arrow.name = "visible-arrow-shot"
+      const midpoint = from.clone().add(direction.clone().multiplyScalar(Math.min(distance * 0.42, 7)))
+      arrow.position.copy(midpoint)
+      arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction)
+
+      const shaft = new THREE.Mesh(arrowShaftGeo, arrowShaftMat)
+      shaft.name = "arrow-shaft"
+      arrow.add(shaft)
+
+      const head = new THREE.Mesh(arrowHeadGeo, arrowHeadMat)
+      head.name = "arrow-head"
+      head.position.y = 0.84
+      arrow.add(head)
+
+      const featherA = new THREE.Mesh(arrowFeatherGeo, arrowFeatherMat)
+      featherA.name = "arrow-feather-a"
+      featherA.position.y = -0.62
+      arrow.add(featherA)
+
+      const featherB = new THREE.Mesh(arrowFeatherGeo, arrowFeatherMat)
+      featherB.name = "arrow-feather-b"
+      featherB.position.y = -0.62
+      featherB.rotation.y = Math.PI / 2
+      arrow.add(featherB)
+
+      scene.add(arrow)
+      effects.push({ obj: arrow, expiresAtMs: performance.now() + 180 })
     }
 
     const spawnHitFlash = (point: any) => {
@@ -712,7 +923,7 @@ export function GameCanvas({
       const hit = hits[0]
       const from = camera.position.clone()
       const to = hit ? hit.point.clone() : from.clone().add(forward.clone().multiplyScalar(14))
-      spawnShotRay(from, to)
+      spawnArrowShot(from, to)
       if (!hit) return
 
       const obj: any = hit.object
@@ -943,7 +1154,7 @@ export function GameCanvas({
       clearEnemies()
 
         ; (Object.values(gateTextures) as any[]).forEach((t) => t.dispose?.())
-      enemyTextures.forEach((t: any) => t.dispose?.())
+      enemyCatalog.forEach((entry) => entry.texture.dispose?.())
 
       scene.traverse((obj: any) => {
         if (obj instanceof THREE.Mesh) {
