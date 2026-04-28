@@ -94,7 +94,7 @@ export function GameCanvas({
     const hemi = new THREE.HemisphereLight(0x86b6ff, 0x1b140f, 0.4)
     scene.add(hemi)
 
-    // Fortress defense environment (simple layout-focused geometry)
+    // Fortress defense environment
     const stoneMat = new THREE.MeshStandardMaterial({
       color: 0x6b6a63,
       roughness: 1,
@@ -110,20 +110,122 @@ export function GameCanvas({
       roughness: 0.9,
       metalness: 0,
     })
+    const grassGroundMat = new THREE.MeshStandardMaterial({
+      color: 0x425f3d,
+      roughness: 1,
+      metalness: 0,
+    })
+    const distantGrassMat = new THREE.MeshStandardMaterial({
+      color: 0x31472f,
+      roughness: 1,
+      metalness: 0,
+    })
+    const dirtMat = new THREE.MeshStandardMaterial({
+      color: 0x5f4a32,
+      roughness: 1,
+      metalness: 0,
+    })
+    const rockMat = new THREE.MeshStandardMaterial({
+      color: 0x4c5148,
+      roughness: 1,
+      metalness: 0,
+    })
+
+    const seededRandom = (() => {
+      let seed = 1337
+      return () => {
+        seed = (seed * 1664525 + 1013904223) >>> 0
+        return seed / 4294967296
+      }
+    })()
 
     // Ground plane below (outside battlefield)
     const outsideGround = new THREE.Mesh(
       new THREE.PlaneGeometry(400, 400, 1, 1),
-      new THREE.MeshStandardMaterial({
-        color: 0x6e7f92,
-        roughness: 1,
-        metalness: 0,
-      }),
+      grassGroundMat,
     )
     outsideGround.name = "outside-ground"
     outsideGround.rotation.x = -Math.PI / 2
     outsideGround.position.set(0, 0, -100)
     scene.add(outsideGround)
+
+    const distantGround = new THREE.Mesh(
+      new THREE.PlaneGeometry(460, 130, 1, 1),
+      distantGrassMat,
+    )
+    distantGround.name = "distant-grass-field"
+    distantGround.rotation.x = -Math.PI / 2
+    distantGround.position.set(0, 0.015, -205)
+    scene.add(distantGround)
+
+    const approachPath = new THREE.Mesh(
+      new THREE.PlaneGeometry(12, 145, 1, 1),
+      dirtMat,
+    )
+    approachPath.name = "fortress-approach-path"
+    approachPath.rotation.x = -Math.PI / 2
+    approachPath.position.set(0, 0.03, -70)
+    scene.add(approachPath)
+
+    const grassBladeGeo = new THREE.PlaneGeometry(0.18, 1.15, 1, 1)
+    grassBladeGeo.translate(0, 0.575, 0)
+    const grassBladeMat = new THREE.MeshStandardMaterial({
+      color: 0x5f8f46,
+      roughness: 0.95,
+      metalness: 0,
+      side: THREE.DoubleSide,
+      vertexColors: true,
+    })
+    const grassCount = 950
+    const grassBlades = new THREE.InstancedMesh(grassBladeGeo, grassBladeMat, grassCount)
+    grassBlades.name = "outside-grass-blades"
+    grassBlades.frustumCulled = false
+
+    const grassMatrix = new THREE.Matrix4()
+    const grassPosition = new THREE.Vector3()
+    const grassQuaternion = new THREE.Quaternion()
+    const grassScale = new THREE.Vector3()
+    const grassColor = new THREE.Color()
+    const grassEuler = new THREE.Euler()
+
+    for (let i = 0; i < grassCount; i++) {
+      let x = 0
+      let z = 0
+      for (let attempts = 0; attempts < 8; attempts++) {
+        x = (seededRandom() - 0.5) * 135
+        z = -8 - seededRandom() * 150
+        if (Math.abs(x) > 7 || z < -38) break
+      }
+
+      const height = 0.55 + seededRandom() * 1.05
+      const width = 0.5 + seededRandom() * 0.9
+      const lean = (seededRandom() - 0.5) * 0.28
+      grassPosition.set(x, 0.025, z)
+      grassEuler.set(lean, seededRandom() * Math.PI * 2, (seededRandom() - 0.5) * 0.18)
+      grassQuaternion.setFromEuler(grassEuler)
+      grassScale.set(width, height, width)
+      grassMatrix.compose(grassPosition, grassQuaternion, grassScale)
+      grassBlades.setMatrixAt(i, grassMatrix)
+      grassColor.setHSL(0.26 + seededRandom() * 0.06, 0.35 + seededRandom() * 0.18, 0.25 + seededRandom() * 0.16)
+      grassBlades.setColorAt(i, grassColor)
+    }
+    grassBlades.instanceMatrix.needsUpdate = true
+    if (grassBlades.instanceColor) grassBlades.instanceColor.needsUpdate = true
+    scene.add(grassBlades)
+
+    const rockGeo = new THREE.DodecahedronGeometry(1, 0)
+    for (let i = 0; i < 18; i++) {
+      const rock = new THREE.Mesh(rockGeo, rockMat)
+      rock.name = `field-stone-${i + 1}`
+      const side = i % 2 === 0 ? -1 : 1
+      const x = side * (12 + seededRandom() * 48)
+      const z = -16 - seededRandom() * 135
+      const s = 0.35 + seededRandom() * 0.9
+      rock.position.set(x, 0.12 + s * 0.22, z)
+      rock.rotation.set(seededRandom() * Math.PI, seededRandom() * Math.PI, seededRandom() * Math.PI)
+      rock.scale.set(s * 1.35, s * 0.48, s)
+      scene.add(rock)
+    }
 
     // Elevated fortress wall platform
     const platformHeight = 8
