@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Cinzel, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
+import Script from 'next/script'
 import './globals.css'
 
 const cinzel = Cinzel({ 
@@ -49,6 +50,19 @@ export default function RootLayout({
     <html lang="en" className="bg-background">
       <body className={`${cinzel.variable} font-sans antialiased overflow-hidden`}>
         {children}
+        {/* Vibe Jam 2026 entrant widget (required) */}
+        <Script async src="https://vibej.am/2026/widget.js" strategy="afterInteractive" />
+        {/* Hotjar Tracking Code for ErebuniGates */}
+        <Script id="hotjar" strategy="afterInteractive">
+          {`(function(h,o,t,j,a,r){
+  h.hj=h.hj||function(){(h.hj.q=h.hj.q||[]).push(arguments)};
+  h._hjSettings={hjid:6700838,hjsv:6};
+  a=o.getElementsByTagName('head')[0];
+  r=o.createElement('script');r.async=1;
+  r.src=t+h._hjSettings.hjid+j+h._hjSettings.hjsv;
+  a.appendChild(r);
+})(window,document,'https://static.hotjar.com/c/hotjar-','.js?sv=');`}
+        </Script>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

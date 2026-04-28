@@ -19,6 +19,14 @@ type Enemy = {
 declare global {
   interface Window {
     webkitAudioContext?: typeof AudioContext
+    THREE?: any
+    initVibeJamPortals?: (args: {
+      scene: any
+      getPlayer: () => any
+      spawnPoint?: { x: number; y: number; z: number }
+      exitPosition?: { x: number; y: number; z: number }
+    }) => void
+    animateVibeJamPortals?: () => void
   }
 }
 
@@ -58,8 +66,38 @@ export function GameCanvas({
     const canvas = canvasRef.current
     if (!canvas) return
 
+    // The Vibe Jam portal helper expects THREE on the global scope.
+    // In Next/ESM builds it isn't global by default.
+    ;(window as any).THREE = THREE
+
+    const ensureVibeJamPortalScript = () => {
+      if (typeof window === "undefined") return
+      if (window.initVibeJamPortals) return
+      const existing = document.querySelector<HTMLScriptElement>(
+        'script[src="https://vibej.am/2026/portal/sample.js"]',
+      )
+      if (existing) return
+      const s = document.createElement("script")
+      s.src = "https://vibej.am/2026/portal/sample.js"
+      s.async = true
+      document.head.appendChild(s)
+    }
+
     type GameSound = "bow" | "hit" | "enemyDeath" | "waveStart" | "gateSelect"
     let audioContext: AudioContext | null = null
+
+    // Pointer-lock re-entry cooldown:
+    // Browsers can reject `requestPointerLock()` immediately after an exit with:
+    // "Pointer lock cannot be acquired immediately after the user has exited the lock."
+    // We track the last unlock time and ignore the first click for a short window.
+    let lastPointerUnlockAtMs = -Infinity
+    const pointerRelockCooldownMs = 900
+    const onPointerLockChange = () => {
+      if (document.pointerLockElement !== canvas) {
+        lastPointerUnlockAtMs = performance.now()
+      }
+    }
+    document.addEventListener("pointerlockchange", onPointerLockChange)
 
     const getAudioContext = () => {
       const AudioContextCtor = window.AudioContext || window.webkitAudioContext
@@ -436,6 +474,29 @@ export function GameCanvas({
     const playerHeightY = platformTopY + eyeHeightAbovePlatform
     camera.position.set(0, playerHeightY, 7.5)
     camera.lookAt(0, 8, -45)
+
+    // Optional: Vibe Jam 2026 portals (webring hop). Loads tiny helper script and
+    // initializes portals inside our Three.js scene.
+    ensureVibeJamPortalScript()
+    let vibePortalsInitialized = false
+    const tryInitVibeJamPortals = () => {
+      if (vibePortalsInitialized) return
+      if (!window.initVibeJamPortals) return
+      try {
+        window.initVibeJamPortals({
+          scene,
+          getPlayer: () => camera,
+          // Spawn point used when arriving with ?portal=true (keep it where the player starts).
+          spawnPoint: { x: 0, y: playerHeightY, z: 7.5 },
+          // Exit portal location the player can walk into (on the walkway, near the rear parapet).
+          exitPosition: { x: 0, y: platformTopY + 0.05, z: platformZ + platformDepth / 2 - 1.8 },
+        })
+        vibePortalsInitialized = true
+      } catch (err) {
+        console.warn("[VibeJam] portal init failed; disabling portals", err)
+        vibePortalsInitialized = true
+      }
+    }
 
     const frontWall = new THREE.Mesh(
       new THREE.BoxGeometry(platformWidth + 8, platformHeight, 3.2),
@@ -1081,7 +1142,26 @@ export function GameCanvas({
       e.preventDefault()
 
       if (document.pointerLockElement !== canvas) {
-        canvas.requestPointerLock()
+        const sinceUnlock = performance.now() - lastPointerUnlockAtMs
+        if (sinceUnlock >= 0 && sinceUnlock < pointerRelockCooldownMs) {
+          // Ignore this click; user can click again once cooldown passes.
+          setInteractionHint("Click again to resume control")
+          return
+        }
+        try {
+          const maybePromise = (canvas as any).requestPointerLock?.()
+          if (maybePromise && typeof maybePromise.catch === "function") {
+            maybePromise.catch(() => {
+              // If the browser rejects quickly after unlock, treat it as an unlock cooldown.
+              lastPointerUnlockAtMs = performance.now()
+              setInteractionHint("Click again to resume control")
+            })
+          }
+        } catch {
+          // Some browsers throw SecurityError synchronously.
+          lastPointerUnlockAtMs = performance.now()
+          setInteractionHint("Click again to resume control")
+        }
         return
       }
 
@@ -1134,6 +1214,9 @@ export function GameCanvas({
       const now = performance.now()
       const dt = Math.min((now - lastT) / 1000, 0.05)
       lastT = now
+
+      // If the portal helper script loads after us, initialize it on the next frame.
+      if (!vibePortalsInitialized) tryInitVibeJamPortals()
 
       if (pausedRef.current) {
         renderer.render(scene, camera)
@@ -1276,6 +1359,13 @@ export function GameCanvas({
         }
       }
 
+      // Animate Vibe Jam portals (if enabled/loaded).
+      try {
+        window.animateVibeJamPortals?.()
+      } catch (err) {
+        console.warn("[VibeJam] portal animate failed; disabling portals", err)
+        window.animateVibeJamPortals = undefined
+      }
       renderer.render(scene, camera)
     }
     render()
@@ -1287,6 +1377,7 @@ export function GameCanvas({
       window.removeEventListener("mousemove", onMouseMove)
       window.removeEventListener("keydown", onKeyDown)
       window.removeEventListener("keyup", onKeyUp)
+      document.removeEventListener("pointerlockchange", onPointerLockChange)
 
       clearEnemies()
 
