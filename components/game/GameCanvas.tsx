@@ -6,6 +6,8 @@ import * as THREE from "three"
 type Enemy = {
   mesh: any
   speed: number
+  breachDamage: number
+  health: number
   radius: number
   lastDamageAtMs: number
   baseY: number
@@ -16,19 +18,24 @@ type Enemy = {
 type GateType = "fire" | "shadow" | "storm"
 type Gate = {
   type: GateType
+  label: string
   mesh: any
   radius: number
   glow?: any
+  labelSprite?: any
+  hitArea?: any
 }
 
 export function GameCanvas({
   onPlayerHit,
   onEnemyKilled,
   onGateSelected,
+  onInteractionHintChange,
 }: {
   onPlayerHit?: (damage: number) => void
   onEnemyKilled?: () => void
-  onGateSelected?: (gate: GateType) => void
+  onGateSelected?: (gate: GateType | null) => void
+  onInteractionHintChange?: (hint: string) => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
@@ -108,6 +115,21 @@ export function GameCanvas({
     const redMat = new THREE.MeshStandardMaterial({
       color: 0x7a1f1a,
       roughness: 0.9,
+      metalness: 0,
+    })
+    const whitePaintMat = new THREE.MeshStandardMaterial({
+      color: 0xd8d0b4,
+      roughness: 0.95,
+      metalness: 0,
+    })
+    const basaltMat = new THREE.MeshStandardMaterial({
+      color: 0x242421,
+      roughness: 1,
+      metalness: 0,
+    })
+    const basaltLightMat = new THREE.MeshStandardMaterial({
+      color: 0x3c3b36,
+      roughness: 1,
       metalness: 0,
     })
     const grassGroundMat = new THREE.MeshStandardMaterial({
@@ -236,21 +258,64 @@ export function GameCanvas({
     const eyeHeightAbovePlatform = 1.6
     const playerHeightY = platformTopY + eyeHeightAbovePlatform
 
+    const frontWall = new THREE.Mesh(
+      new THREE.BoxGeometry(platformWidth + 8, platformHeight, 3.2),
+      basaltMat,
+    )
+    frontWall.name = "erebuni-front-wall"
+    frontWall.position.set(0, platformHeight / 2, 0.2)
+    scene.add(frontWall)
+
     const platform = new THREE.Mesh(
       new THREE.BoxGeometry(platformWidth, 1, platformDepth),
-      darkStoneMat,
+      basaltLightMat,
     )
     platform.name = "wall-platform"
-    // thickness=1, so y=6 means the wall's center is at y=6 (top at 6.5)
     platform.position.set(0, platformHeight, platformZ)
     scene.add(platform)
 
+    const walkway = new THREE.Mesh(
+      new THREE.BoxGeometry(platformWidth - 5, 0.12, platformDepth - 2.2),
+      stoneMat,
+    )
+    walkway.name = "raised-wall-walkway"
+    walkway.position.set(0, platformTopY + 0.07, platformZ + 0.35)
+    scene.add(walkway)
+
+    const redBand = new THREE.Mesh(
+      new THREE.BoxGeometry(platformWidth + 8.4, 0.55, 0.08),
+      redMat,
+    )
+    redBand.name = "urartu-red-wall-band"
+    redBand.position.set(0, platformHeight - 1.35, -1.44)
+    scene.add(redBand)
+
+    const whiteBand = new THREE.Mesh(
+      new THREE.BoxGeometry(platformWidth + 8.2, 0.38, 0.09),
+      whitePaintMat,
+    )
+    whiteBand.name = "urartu-white-wall-band"
+    whiteBand.position.set(0, platformHeight - 2.05, -1.48)
+    scene.add(whiteBand)
+
+    const blockGeo = new THREE.BoxGeometry(3.4, 0.55, 0.14)
+    for (let row = 0; row < 7; row++) {
+      const y = 1.15 + row * 0.92
+      const stagger = row % 2 === 0 ? 0 : 1.7
+      for (let x = -22; x <= 22; x += 3.4) {
+        const block = new THREE.Mesh(blockGeo, row % 2 === 0 ? basaltLightMat : darkStoneMat)
+        block.name = `basalt-wall-block-${row}-${x}`
+        block.position.set(x + stagger, y, -1.5)
+        scene.add(block)
+      }
+    }
+
     // Front battlement parapet (waist-height so player can see over it)
-    const defenseLineHeight = 0.8
+    const defenseLineHeight = 0.9
     const defenseLineThickness = 1
     const defenseLine = new THREE.Mesh(
-      new THREE.BoxGeometry(platformWidth, defenseLineHeight, defenseLineThickness),
-      darkStoneMat,
+      new THREE.BoxGeometry(platformWidth + 1.5, defenseLineHeight, defenseLineThickness),
+      basaltMat,
     )
     defenseLine.name = "defense-line"
     defenseLine.position.set(
@@ -260,24 +325,67 @@ export function GameCanvas({
     )
     scene.add(defenseLine)
 
-    const towerGeo = new THREE.CylinderGeometry(2.8, 3.4, 12, 14, 1, false)
-    const towerTopGeo = new THREE.CylinderGeometry(3.6, 3.6, 1.2, 14)
+    const rearParapet = new THREE.Mesh(
+      new THREE.BoxGeometry(platformWidth + 1.5, 1.1, 0.9),
+      basaltMat,
+    )
+    rearParapet.name = "rear-parapet"
+    rearParapet.position.set(0, platformTopY + 0.55, platformZ + platformDepth / 2 - 0.45)
+    scene.add(rearParapet)
 
-    const makeTower = (name: string, x: number, z: number) => {
-      const tower = new THREE.Mesh(towerGeo, darkStoneMat)
-      tower.name = name
-      tower.position.set(x, platformHeight + 6, z)
-      scene.add(tower)
+    const crenelGeo = new THREE.BoxGeometry(1.15, 1.05, 0.95)
+    for (let i = 0; i < 17; i++) {
+      const x = -platformWidth / 2 + 1.2 + i * 2.35
+      const frontCrenel = new THREE.Mesh(crenelGeo, basaltLightMat)
+      frontCrenel.name = `front-crenel-${i + 1}`
+      frontCrenel.position.set(x, platformTopY + defenseLineHeight + 0.5, 0.5)
+      scene.add(frontCrenel)
 
-      const top = new THREE.Mesh(towerTopGeo, redMat)
-      top.name = `${name}-cap`
-      top.position.set(x, platformHeight + 12.6, z)
-      scene.add(top)
+      const rearCrenel = new THREE.Mesh(crenelGeo, basaltLightMat)
+      rearCrenel.name = `rear-crenel-${i + 1}`
+      rearCrenel.position.set(x, platformTopY + 1.6, platformZ + platformDepth / 2 - 0.45)
+      scene.add(rearCrenel)
     }
 
-    makeTower("tower-left", -platformWidth / 2 + 2, platformZ - platformDepth / 2 + 1)
-    makeTower("tower-right", platformWidth / 2 - 2, platformZ - platformDepth / 2 + 1)
-    makeTower("tower-center", 0, platformZ + platformDepth / 2 - 1)
+    const makeTower = (name: string, x: number, z: number, width: number, depth: number, height: number) => {
+      const tower = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), basaltMat)
+      tower.name = name
+      tower.position.set(x, height / 2, z)
+      scene.add(tower)
+
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(width + 0.8, 0.7, depth + 0.8), redMat)
+      cap.name = `${name}-red-cap`
+      cap.position.set(x, height + 0.35, z)
+      scene.add(cap)
+
+      const whiteInset = new THREE.Mesh(new THREE.BoxGeometry(width + 0.95, 0.32, 0.08), whitePaintMat)
+      whiteInset.name = `${name}-white-band`
+      whiteInset.position.set(x, height - 2.1, z - depth / 2 - 0.05)
+      scene.add(whiteInset)
+
+      for (let i = 0; i < 3; i++) {
+        const crenel = new THREE.Mesh(crenelGeo, basaltLightMat)
+        crenel.name = `${name}-crenel-${i + 1}`
+        crenel.position.set(x - width / 3 + i * width / 3, height + 1.15, z - depth / 2)
+        scene.add(crenel)
+      }
+    }
+
+    makeTower("tower-left-rect", -platformWidth / 2 - 1.5, 1.2, 6.2, 5.4, 12.5)
+    makeTower("tower-right-rect", platformWidth / 2 + 1.5, 1.2, 6.2, 5.4, 12.5)
+    makeTower("tower-rear-left-rect", -platformWidth / 2 + 3, platformZ + platformDepth / 2 - 0.6, 5, 4.8, 11)
+    makeTower("tower-rear-right-rect", platformWidth / 2 - 3, platformZ + platformDepth / 2 - 0.6, 5, 4.8, 11)
+
+    const sideWallGeo = new THREE.BoxGeometry(2.2, platformHeight - 0.5, platformDepth + 1.6)
+    const leftReturnWall = new THREE.Mesh(sideWallGeo, basaltMat)
+    leftReturnWall.name = "left-return-wall"
+    leftReturnWall.position.set(-platformWidth / 2 - 1.1, (platformHeight - 0.5) / 2, platformZ + 0.5)
+    scene.add(leftReturnWall)
+
+    const rightReturnWall = new THREE.Mesh(sideWallGeo, basaltMat)
+    rightReturnWall.name = "right-return-wall"
+    rightReturnWall.position.set(platformWidth / 2 + 1.1, (platformHeight - 0.5) / 2, platformZ + 0.5)
+    scene.add(rightReturnWall)
 
     const textureLoader = new THREE.TextureLoader()
 
@@ -293,45 +401,104 @@ export function GameCanvas({
       storm: textureLoader.load(gateTexturePaths.storm),
     }
 
-    const gatePlaneGeo = new THREE.PlaneGeometry(3.2, 4.2)
-    const gateGlowGeo = new THREE.PlaneGeometry(3.9, 5.1)
+    const gatePlaneGeo = new THREE.PlaneGeometry(4.8, 6.2)
+    const gateGlowGeo = new THREE.PlaneGeometry(6.1, 7.7)
+    const gateHitGeo = new THREE.PlaneGeometry(6.6, 8.4)
+
+    const makeLabelTexture = (label: string) => {
+      const labelCanvas = document.createElement("canvas")
+      labelCanvas.width = 256
+      labelCanvas.height = 96
+      const ctx = labelCanvas.getContext("2d")
+      if (ctx) {
+        ctx.clearRect(0, 0, labelCanvas.width, labelCanvas.height)
+        ctx.font = "700 38px serif"
+        ctx.textAlign = "center"
+        ctx.textBaseline = "middle"
+        ctx.lineWidth = 7
+        ctx.strokeStyle = "rgba(7, 10, 18, 0.92)"
+        ctx.fillStyle = "#fff1c7"
+        ctx.strokeText(label, 128, 48)
+        ctx.fillText(label, 128, 48)
+      }
+      const texture = new THREE.CanvasTexture(labelCanvas)
+      texture.colorSpace = THREE.SRGBColorSpace
+      return texture
+    }
 
     const gates: Gate[] = []
-    const spawnGate = (type: GateType, x: number, z: number) => {
+    const spawnGate = (type: GateType, label: string, x: number, z: number) => {
       const group = new THREE.Group()
       group.name = `gate-${type}`
-      group.position.set(x, 0, z)
+      group.position.set(x, platformTopY + 3.6, z)
 
       const baseMat = new THREE.MeshBasicMaterial({
         map: gateTextures[type],
         transparent: true,
         depthWrite: false,
+        side: THREE.DoubleSide,
       })
       const base = new THREE.Mesh(gatePlaneGeo, baseMat)
       base.name = `gate-plane-${type}`
-      base.position.set(0, platformHeight + 2.2, 0)
+      base.position.set(0, 0, 0)
       group.add(base)
 
       const glowMat = new THREE.MeshBasicMaterial({
         color: type === "fire" ? 0xff5b3b : type === "shadow" ? 0x7a6cff : 0x56c7ff,
         transparent: true,
-        opacity: 0.25,
+        opacity: 0.35,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
+        side: THREE.DoubleSide,
       })
       const glow = new THREE.Mesh(gateGlowGeo, glowMat)
       glow.name = `gate-glow-${type}`
-      glow.position.set(0, platformHeight + 2.2, -0.02)
+      glow.position.set(0, 0, -0.04)
       group.add(glow)
 
+      const hitArea = new THREE.Mesh(
+        gateHitGeo,
+        new THREE.MeshBasicMaterial({
+          transparent: true,
+          opacity: 0,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        }),
+      )
+      hitArea.name = `gate-hit-area-${type}`
+      hitArea.position.set(0, 0, 0.03)
+      group.add(hitArea)
+
+      const labelTexture = makeLabelTexture(label)
+      const labelSprite = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: labelTexture,
+          transparent: true,
+          depthWrite: false,
+        }),
+      )
+      labelSprite.name = `gate-label-${type}`
+      labelSprite.position.set(0, 4.45, 0)
+      labelSprite.scale.set(4.9, 1.85, 1)
+      group.add(labelSprite)
+
       scene.add(group)
-      gates.push({ type, mesh: group, glow, radius: 3.0 })
+      gates.push({ type, label, mesh: group, glow, labelSprite, hitArea, radius: 4.1 })
+      console.log(
+        "[gate spawned]",
+        type,
+        "position",
+        group.position.toArray(),
+        "label",
+        label,
+      )
     }
 
-    // Spawn 3 gates on the wall/platform
-    spawnGate("fire", -8, platformZ)
-    spawnGate("shadow", 0, platformZ)
-    spawnGate("storm", 8, platformZ)
+    // Spawn 3 readable gates on the inner fortress wall, behind the player.
+    const gateWallZ = platformZ - 0.8
+    spawnGate("fire", "Fire", -11, gateWallZ)
+    spawnGate("storm", "Storm", 0, gateWallZ)
+    spawnGate("shadow", "Shadow", 11, gateWallZ)
 
     // Enemies (sprites; always face camera automatically)
     const enemyTexturePaths = [
@@ -344,7 +511,14 @@ export function GameCanvas({
     const enemyTextures = enemyTexturePaths.map((p) => textureLoader.load(p))
 
     const enemies: Enemy[] = []
-    const spawnEnemy = (name: string, x: number, z: number, speed: number) => {
+    const spawnEnemy = (
+      name: string,
+      x: number,
+      z: number,
+      speed: number,
+      breachDamage: number,
+      health: number,
+    ) => {
       const tex = enemyTextures[Math.floor(Math.random() * enemyTextures.length)]
       const material = new THREE.SpriteMaterial({
         map: tex,
@@ -361,6 +535,8 @@ export function GameCanvas({
       enemies.push({
         mesh: sprite,
         speed,
+        breachDamage,
+        health,
         radius: 0.9,
         lastDamageAtMs: 0,
         baseY: 1.5,
@@ -371,19 +547,27 @@ export function GameCanvas({
 
     const destroyEnemy = (mesh: any) => {
       const idx = enemies.findIndex((e) => e.mesh === mesh)
-      if (idx === -1) return
+      if (idx === -1) return false
       const [enemy] = enemies.splice(idx, 1)
       scene.remove(enemy.mesh)
 
       const mat = enemy.mesh.material
       if (mat?.dispose) mat.dispose()
       onEnemyKilled?.()
+      console.log("enemy killed")
 
       // Wave clear check
-      if (phase.mode === "combat" && enemies.length === 0) {
-        phase = { mode: "gate-selection" }
-        setGatesVisible(true)
-        console.log("[wave cleared]", waveNumber)
+      if (phase.mode === "PLAYING_WAVE" && enemies.length === 0) {
+        completeWave()
+      }
+      return true
+    }
+
+    const damageEnemy = (enemy: Enemy, damage: number) => {
+      enemy.health -= damage
+      console.log("[enemy damaged]", enemy.mesh.name, "health:", enemy.health)
+      if (enemy.health <= 0) {
+        destroyEnemy(enemy.mesh)
       }
     }
 
@@ -392,60 +576,101 @@ export function GameCanvas({
       enemies.length = 0
     }
 
-    // Basic enemy spawn on initialization
-    type Phase = { mode: "combat" } | { mode: "gate-selection" }
-    let phase: Phase = { mode: "combat" }
+    type Phase = { mode: "PLAYING_WAVE" } | { mode: "GATE_SELECTION" }
+    let phase: Phase = { mode: "PLAYING_WAVE" }
     let waveNumber = 1
     let pendingGate: GateType | null = null
+    let activeModifier: GateType | null = null
+    const interactionDistance = 7.5
+    let lastInteractionHint = ""
+    let lastGateDebugAtMs = 0
 
-    const spawnWave = (wave: number, gate: GateType | null) => {
-      // Simple placeholder: spawn 5 enemies (outside) for now.
-      // (The user requested basic init spawn; waves can be expanded later.)
-      clearEnemies()
-      const xLeft = -platformWidth / 2 - 12
-      const xRight = platformWidth / 2 + 12
-      const zStart = platformZ - 90
-      for (let i = 0; i < 5; i++) {
-        const x = xLeft + (i / 4) * (xRight - xLeft)
-        const z = zStart - (i % 2) * 8
-        spawnEnemy(`wave-${wave}-enemy-${i + 1}`, x, z, 2.2)
+    const setInteractionHint = (hint: string) => {
+      if (hint === lastInteractionHint) return
+      lastInteractionHint = hint
+      onInteractionHintChange?.(hint)
+    }
+
+    const getNearestGate = () => {
+      let nearestGate: Gate | null = null
+      let nearestDistance = Infinity
+      for (const gate of gates) {
+        const dx = gate.mesh.position.x - camera.position.x
+        const dz = gate.mesh.position.z - camera.position.z
+        const distance = Math.hypot(dx, dz)
+        if (distance < nearestDistance) {
+          nearestGate = gate
+          nearestDistance = distance
+        }
       }
+      return { nearestGate, nearestDistance }
+    }
+
+    const completeWave = () => {
+      phase = { mode: "GATE_SELECTION" }
+      activeModifier = null
+      setGatesVisible(true)
+      onGateSelected?.(null)
+      console.log("wave complete")
+      console.log("gate selection active")
+      console.log("current gamePhase", phase.mode)
+    }
+
+    const startWave = (wave: number, gate: GateType | null) => {
+      phase = { mode: "PLAYING_WAVE" }
+      waveNumber = wave
+      pendingGate = gate
+      activeModifier = gate
+      setGatesVisible(false)
+      setInteractionHint("")
+      clearEnemies()
+
+      const baseEnemyCount = 5 + (wave - 1) * 2
+      const baseEnemySpeed = 1.5 + (wave - 1) * 0.22
+      const baseBreachDamage = 5 + (wave - 1) * 1.25
+      const baseEnemyHealth = 1 + Math.floor((wave - 1) / 4)
+      const enemyCount =
+        gate === "fire"
+          ? Math.max(3, baseEnemyCount - 2)
+          : gate === "shadow"
+            ? baseEnemyCount + 3
+            : baseEnemyCount
+      const enemySpeed =
+        gate === "fire"
+          ? baseEnemySpeed * 1.28
+          : gate === "storm"
+            ? baseEnemySpeed * 0.74
+            : baseEnemySpeed
+      const breachDamage =
+        gate === "fire" ? baseBreachDamage * 1.35 : baseBreachDamage
+      const enemyHealth =
+        gate === "shadow" ? Math.max(0.65, baseEnemyHealth * 0.65) : baseEnemyHealth
+      const spreadBonus = gate === "storm" ? 12 : 0
+      const xLeft = -platformWidth / 2 - 12 - spreadBonus
+      const xRight = platformWidth / 2 + 12 + spreadBonus
+      const zStart = platformZ - 90
+
+      for (let i = 0; i < enemyCount; i++) {
+        const t = enemyCount === 1 ? 0.5 : i / (enemyCount - 1)
+        const row = Math.floor(i / 5)
+        const x = xLeft + t * (xRight - xLeft)
+        const z = zStart - (i % 2) * 8 - row * 7
+        spawnEnemy(`wave-${wave}-enemy-${i + 1}`, x, z, enemySpeed, breachDamage, enemyHealth)
+      }
+
+      console.log(`wave started: ${wave}`, "modifier:", activeModifier ?? "none")
+      console.log("current gamePhase", phase.mode)
     }
 
     const setGatesVisible = (visible: boolean) => {
-      for (const g of gates) g.mesh.visible = visible
-    }
-
-    // Immediately spawn 5 enemies OUTSIDE the fortress (far from player)
-    setGatesVisible(false)
-    clearEnemies()
-    {
-      const forwardDir = new THREE.Vector3()
-      camera.getWorldDirection(forwardDir)
-      forwardDir.y = 0
-      if (forwardDir.lengthSq() === 0) forwardDir.set(0, 0, -1)
-      forwardDir.normalize()
-
-      // If "forward" is behaving backwards for any reason, invert it.
-      const testPos = camera.position.clone().add(forwardDir.clone().multiplyScalar(20))
-      const isBehind = testPos.clone().sub(camera.position).dot(forwardDir) < 0
-      if (isBehind) forwardDir.multiplyScalar(-1)
-
-      const count = 5
-      const spacing = 5
-      const rightDir = new THREE.Vector3().crossVectors(forwardDir, new THREE.Vector3(0, 1, 0)).normalize()
-
-      for (let i = 0; i < count; i++) {
-        const dist = 40 // spawn far out so they're visible approaching
-        const offsetX = (i - (count - 1) / 2) * spacing
-        const pos = camera.position
-          .clone()
-          .add(forwardDir.clone().multiplyScalar(dist))
-          .add(rightDir.clone().multiplyScalar(offsetX))
-        // y is set inside spawnEnemy
-        spawnEnemy(`enemy-${i + 1}`, pos.x, pos.z, 1.5)
+      for (const g of gates) {
+        g.mesh.visible = visible
+        if (g.labelSprite?.material) g.labelSprite.material.opacity = 1
       }
+      console.log(visible ? "gates shown" : "gates hidden")
     }
+
+    startWave(1, null)
 
     // Shooting (raycast from camera center)
     const raycaster = new THREE.Raycaster()
@@ -491,11 +716,11 @@ export function GameCanvas({
       if (!hit) return
 
       const obj: any = hit.object
-      const isEnemy = enemies.some((e) => e.mesh === obj)
-      if (isEnemy) {
+      const enemy = enemies.find((e) => e.mesh === obj)
+      if (enemy) {
         spawnHitFlash(hit.point)
-        destroyEnemy(obj)
         console.log("[shot enemy]", obj.name || obj.uuid)
+        damageEnemy(enemy, 1)
         return
       }
 
@@ -546,6 +771,7 @@ export function GameCanvas({
     const onKeyDown = (e: KeyboardEvent) => {
       keys.add(e.code)
       if (e.code === "KeyE") {
+        console.log("E pressed")
         interactPressed = true
       }
     }
@@ -621,7 +847,7 @@ export function GameCanvas({
           const tickMs = 900
           if (now - e.lastDamageAtMs > tickMs) {
             e.lastDamageAtMs = now
-            onPlayerHit?.(5)
+            onPlayerHit?.(e.breachDamage)
             console.log("[breach damage]", e.mesh.name)
           }
         }
@@ -646,40 +872,59 @@ export function GameCanvas({
         effects.splice(i, 1)
       }
 
-      // Gate look highlight (raycast from camera)
-      let lookedGate: Gate | null = null
-      raycaster.setFromCamera(aim, camera)
-      const gatePlanes = gates.map((g) => g.mesh)
-      const gateHits = raycaster.intersectObjects(gatePlanes, true)
-      if (gateHits[0]) {
-        const hitObj: any = gateHits[0].object
-        lookedGate =
-          gates.find((g) => g.mesh === hitObj || g.mesh.children.includes(hitObj)) ?? null
+      for (const gate of gates) {
+        gate.mesh.lookAt(camera.position.x, gate.mesh.position.y, camera.position.z)
       }
+
+      const { nearestGate, nearestDistance } = getNearestGate()
+      const nearestGateInRange =
+        phase.mode === "GATE_SELECTION" &&
+        nearestGate !== null &&
+        nearestDistance <= interactionDistance
+
+      if (phase.mode === "GATE_SELECTION" && now - lastGateDebugAtMs > 1000) {
+        lastGateDebugAtMs = now
+        console.log("current gamePhase", phase.mode)
+        console.log(
+          "nearestGate",
+          nearestGate?.label ?? "none",
+          "distance",
+          Number.isFinite(nearestDistance) ? nearestDistance.toFixed(2) : "n/a",
+        )
+      }
+
+      setInteractionHint(
+        nearestGateInRange && nearestGate
+          ? `Press E to choose ${nearestGate.label}`
+          : "",
+      )
 
       for (const gate of gates) {
         if (!gate.glow) continue
         const mat: any = gate.glow.material
-        const isFocused = lookedGate?.type === gate.type
+        const isFocused = nearestGateInRange && nearestGate?.type === gate.type
         const isForced = highlightedGate === gate.type && now < gateHighlightUntilMs
         mat.opacity = isForced ? 0.65 : isFocused ? 0.4 : 0.25
       }
 
-      // Gate interaction (press E while looking at gate) — only between waves
+      // Gate interaction (press E near gate) - only between waves.
       if (interactPressed) {
         interactPressed = false
-        if (phase.mode === "gate-selection" && lookedGate) {
-          highlightedGate = lookedGate.type
+        console.log("current gamePhase", phase.mode)
+        console.log(
+          "nearestGate",
+          nearestGate?.label ?? "none",
+          "distance",
+          Number.isFinite(nearestDistance) ? nearestDistance.toFixed(2) : "n/a",
+        )
+        if (nearestGateInRange && nearestGate) {
+          highlightedGate = nearestGate.type
           gateHighlightUntilMs = now + 250
-          pendingGate = lookedGate.type
-          onGateSelected?.(lookedGate.type)
+          onGateSelected?.(nearestGate.type)
+          console.log(`gate selected: ${nearestGate.label}`)
 
           // Begin next wave immediately after selection
-          phase = { mode: "combat" }
-          setGatesVisible(false)
-          waveNumber += 1
-          spawnWave(waveNumber, pendingGate)
-          console.log("[wave start]", waveNumber, pendingGate)
+          startWave(waveNumber + 1, nearestGate.type)
         }
       }
 

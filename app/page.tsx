@@ -14,11 +14,13 @@ export default function GatesOfErebuni() {
     name: string
     icon: string
   } | null>(null)
+  const [interactionHint, setInteractionHint] = useState("")
 
   const handleStartGame = () => {
     setHealth(100)
     setGatesSurvived(0)
     setActiveBlessing(null)
+    setInteractionHint("")
     setGameState("playing")
   }
 
@@ -49,15 +51,18 @@ export default function GatesOfErebuni() {
         <GameCanvas
           onPlayerHit={handlePlayerHit}
           onEnemyKilled={() => setGatesSurvived((s) => s + 1)}
-          onGateSelected={(gate: GateType) => {
+          onGateSelected={(gate: GateType | null) => {
             setActiveBlessing(
-              gate === "fire"
+              gate === null
+                ? null
+                : gate === "fire"
                 ? { name: "Fire Trial: Faster, fewer", icon: "🔥" }
                 : gate === "shadow"
-                  ? { name: "Shadow Trial: More enemies", icon: "🌑" }
-                  : { name: "Storm Trial: Slower enemies", icon: "⚡" },
+                  ? { name: "Shadow Trial: More, weaker", icon: "🌑" }
+                  : { name: "Storm Trial: Slower, wider", icon: "⚡" },
             )
           }}
+          onInteractionHintChange={setInteractionHint}
         />
       )}
 
@@ -68,7 +73,7 @@ export default function GatesOfErebuni() {
           maxHealth={100}
           gatesSurvived={gatesSurvived}
           activeBlessing={activeBlessing}
-          interactionHint="Interact"
+          interactionHint={interactionHint}
         />
       )}
 
