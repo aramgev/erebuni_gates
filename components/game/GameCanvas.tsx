@@ -19,14 +19,6 @@ type Enemy = {
 declare global {
   interface Window {
     webkitAudioContext?: typeof AudioContext
-    THREE?: any
-    initVibeJamPortals?: (args: {
-      scene: any
-      getPlayer: () => any
-      spawnPoint?: { x: number; y: number; z: number }
-      exitPosition?: { x: number; y: number; z: number }
-    }) => void
-    animateVibeJamPortals?: () => void
   }
 }
 
@@ -45,12 +37,22 @@ type Gate = {
 export function GameCanvas({
   onPlayerHit,
   onEnemyKilled,
+  portalProfile,
+  getCurrentHp,
   onGateSelected,
   onInteractionHintChange,
   isPaused = false,
 }: {
   onPlayerHit?: (damage: number) => void
   onEnemyKilled?: () => void
+  portalProfile?: {
+    portal: boolean
+    username: string
+    color?: string
+    speed?: string
+    ref?: string
+  }
+  getCurrentHp?: () => number
   onGateSelected?: (gate: GateType | null) => void
   onInteractionHintChange?: (hint: string) => void
   isPaused?: boolean
@@ -65,23 +67,6 @@ export function GameCanvas({
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-
-    // The Vibe Jam portal helper expects THREE on the global scope.
-    // In Next/ESM builds it isn't global by default.
-    ;(window as any).THREE = THREE
-
-    const ensureVibeJamPortalScript = () => {
-      if (typeof window === "undefined") return
-      if (window.initVibeJamPortals) return
-      const existing = document.querySelector<HTMLScriptElement>(
-        'script[src="https://vibej.am/2026/portal/sample.js"]',
-      )
-      if (existing) return
-      const s = document.createElement("script")
-      s.src = "https://vibej.am/2026/portal/sample.js"
-      s.async = true
-      document.head.appendChild(s)
-    }
 
     type GameSound = "bow" | "hit" | "enemyDeath" | "waveStart" | "gateSelect"
     let audioContext: AudioContext | null = null
@@ -475,27 +460,105 @@ export function GameCanvas({
     camera.position.set(0, playerHeightY, 7.5)
     camera.lookAt(0, 8, -45)
 
-    // Optional: Vibe Jam 2026 portals (webring hop). Loads tiny helper script and
-    // initializes portals inside our Three.js scene.
-    ensureVibeJamPortalScript()
-    let vibePortalsInitialized = false
-    const tryInitVibeJamPortals = () => {
-      if (vibePortalsInitialized) return
-      if (!window.initVibeJamPortals) return
-      try {
-        window.initVibeJamPortals({
-          scene,
-          getPlayer: () => camera,
-          // Spawn point used when arriving with ?portal=true (keep it where the player starts).
-          spawnPoint: { x: 0, y: playerHeightY, z: 7.5 },
-          // Exit portal location the player can walk into (on the walkway, near the rear parapet).
-          exitPosition: { x: 0, y: platformTopY + 0.05, z: platformZ + platformDepth / 2 - 1.8 },
-        })
-        vibePortalsInitialized = true
-      } catch (err) {
-        console.warn("[VibeJam] portal init failed; disabling portals", err)
-        vibePortalsInitialized = true
+    // Vibe Jam portals (native implementation; no external script required).
+    // - Exit portal always exists and sends players to vibej.am portal webring.
+    // - Return portal only exists when arriving with ?portal=true&ref=...
+    const portalGroup = new THREE.Group()
+    portalGroup.name = "vibejam-portals"
+    scene.add(portalGroup)
+
+    const makePortal = (name: string, color: number, label: string, position: THREE.Vector3) => {
+      const group = new THREE.Group()
+      group.name = name
+      group.position.copy(position)
+
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(1.1, 0.18, 14, 48),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9 }),
+      )
+      ring.name = `${name}-ring`
+      ring.rotation.x = Math.PI / 2
+      group.add(ring)
+
+      const disc = new THREE.Mesh(
+        new THREE.CircleGeometry(0.95, 32),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.35, side: THREE.DoubleSide }),
+      )
+      disc.name = `${name}-disc`
+      disc.rotation.x = Math.PI / 2
+      disc.position.y = 0.01
+      group.add(disc)
+
+      // Label as a sprite (cheap + always readable)
+      const labelCanvas = document.createElement("canvas")
+      labelCanvas.width = 512
+      labelCanvas.height = 128
+      const ctx = labelCanvas.getContext("2d")
+      if (ctx) {
+        ctx.clearRect(0, 0, labelCanvas.width, labelCanvas.height)
+        ctx.font = "800 44px system-ui, -apple-system, Segoe UI, sans-serif"
+        ctx.textAlign = "center"
+        ctx.textBaseline = "middle"
+        ctx.lineWidth = 10
+        ctx.strokeStyle = "rgba(0,0,0,0.75)"
+        ctx.fillStyle = "#ffd98a"
+        ctx.strokeText(label, labelCanvas.width / 2, labelCanvas.height / 2)
+        ctx.fillText(label, labelCanvas.width / 2, labelCanvas.height / 2)
       }
+      const tex = new THREE.CanvasTexture(labelCanvas)
+      tex.colorSpace = THREE.SRGBColorSpace
+      const sprite = new THREE.Sprite(
+        new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }),
+      )
+      sprite.name = `${name}-label`
+      sprite.position.set(0, 1.25, 0)
+      sprite.scale.set(3.5, 0.9, 1)
+      group.add(sprite)
+
+      return group
+    }
+
+    const exitPortalPos = new THREE.Vector3(0, platformTopY + 0.08, platformZ + platformDepth / 2 - 1.8)
+    const exitPortal = makePortal("vibejam-exit-portal", 0x3cff7e, "VIBE JAM PORTAL", exitPortalPos)
+    portalGroup.add(exitPortal)
+
+    const spawnPos = new THREE.Vector3(0, platformTopY + 0.08, 7.5)
+    const shouldAddReturnPortal = Boolean(portalProfile?.portal && portalProfile?.ref)
+    const returnPortal = shouldAddReturnPortal
+      ? makePortal("vibejam-return-portal", 0xff5b3b, "RETURN", spawnPos.clone().add(new THREE.Vector3(3.2, 0, 0)))
+      : null
+    if (returnPortal) portalGroup.add(returnPortal)
+
+    const portalRadius = 1.25
+    let portalRedirecting = false
+    const buildExitPortalUrl = () => {
+      const params = new URLSearchParams()
+      const username = (portalProfile?.username || "").trim() || "Portal Defender"
+      params.set("username", username)
+      const color = (portalProfile?.color || "").trim()
+      if (color) params.set("color", color)
+      const hp = Math.max(1, Math.min(100, Math.round(getCurrentHp?.() ?? 100)))
+      params.set("hp", String(hp))
+      params.set("ref", window.location.hostname)
+      return `https://vibej.am/portal/2026?${params.toString()}`
+    }
+
+    const buildReturnPortalUrl = () => {
+      const ref = (portalProfile?.ref || "").trim()
+      if (!ref) return null
+      const base = /^https?:\/\//i.test(ref) ? ref : `https://${ref}`
+      const params = new URLSearchParams()
+      params.set("portal", "true")
+      const username = (portalProfile?.username || "").trim() || "Portal Defender"
+      params.set("username", username)
+      const color = (portalProfile?.color || "").trim()
+      if (color) params.set("color", color)
+      const hp = Math.max(1, Math.min(100, Math.round(getCurrentHp?.() ?? 100)))
+      params.set("hp", String(hp))
+      // Keep their ref chain: when returning, set ref to this game.
+      params.set("ref", window.location.hostname)
+      const s = params.toString()
+      return `${base}?${s}`
     }
 
     const frontWall = new THREE.Mesh(
@@ -1215,9 +1278,6 @@ export function GameCanvas({
       const dt = Math.min((now - lastT) / 1000, 0.05)
       lastT = now
 
-      // If the portal helper script loads after us, initialize it on the next frame.
-      if (!vibePortalsInitialized) tryInitVibeJamPortals()
-
       if (pausedRef.current) {
         renderer.render(scene, camera)
         return
@@ -1359,12 +1419,22 @@ export function GameCanvas({
         }
       }
 
-      // Animate Vibe Jam portals (if enabled/loaded).
-      try {
-        window.animateVibeJamPortals?.()
-      } catch (err) {
-        console.warn("[VibeJam] portal animate failed; disabling portals", err)
-        window.animateVibeJamPortals = undefined
+      // Vibe Jam portal collision checks (very cheap).
+      if (!portalRedirecting) {
+        const p = camera.position
+        if (p.distanceTo(exitPortal.position) <= portalRadius) {
+          portalRedirecting = true
+          window.location.href = buildExitPortalUrl()
+          return
+        }
+        if (returnPortal) {
+          const returnUrl = buildReturnPortalUrl()
+          if (returnUrl && p.distanceTo(returnPortal.position) <= portalRadius) {
+            portalRedirecting = true
+            window.location.href = returnUrl
+            return
+          }
+        }
       }
       renderer.render(scene, camera)
     }

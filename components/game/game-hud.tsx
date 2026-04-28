@@ -6,6 +6,7 @@ interface GameHUDProps {
   health: number
   maxHealth: number
   gatesSurvived: number
+  username?: string
   activeBlessing: {
     name: string
     icon: string
@@ -18,6 +19,7 @@ export function GameHUD({
   health,
   maxHealth,
   gatesSurvived,
+  username,
   activeBlessing,
   interactionHint,
   onShowHelp,
@@ -58,6 +60,11 @@ export function GameHUD({
           <span className="text-xs text-muted-foreground tabular-nums">
             {health} / {maxHealth}
           </span>
+          {username && (
+            <span className="text-xs text-muted-foreground tracking-wide">
+              {username}
+            </span>
+          )}
         </div>
 
         {/* Score - Top center */}
