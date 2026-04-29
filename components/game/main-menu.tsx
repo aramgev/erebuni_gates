@@ -12,6 +12,8 @@ interface MainMenuProps {
   onShowLeaderboard: () => void
   onShowHelp: () => void
   onShowStory: () => void
+  muted?: boolean
+  onToggleMute?: () => void
 }
 
 export function MainMenu({
@@ -21,6 +23,8 @@ export function MainMenu({
   onShowLeaderboard,
   onShowHelp,
   onShowStory,
+  muted = false,
+  onToggleMute,
 }: MainMenuProps) {
   return (
     <div className="absolute inset-0 z-20 overflow-y-auto overflow-x-hidden bg-[#08090d] text-[#f4ead2]">
@@ -31,6 +35,30 @@ export function MainMenu({
 
       <div className="relative z-10 flex min-h-screen flex-col px-5 py-6 pb-10 md:px-10 lg:px-14">
         <header className="mx-auto flex w-full max-w-6xl flex-col items-center gap-2 text-center">
+          <div className="absolute right-4 top-4 flex items-center gap-2 md:right-8">
+            {onToggleMute && (
+              <button
+                type="button"
+                onClick={onToggleMute}
+                className="flex h-9 w-9 items-center justify-center rounded-sm border border-[#c99337]/40 bg-[#150d0d]/50 text-[#c99337]/70 transition-colors hover:bg-[#c99337]/15 hover:text-[#ffd98a]"
+                aria-label={muted ? "Unmute" : "Mute"}
+              >
+                {muted ? (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+                    <path d="M11 5L6 9H2v6h4l5 4V5z" strokeLinecap="round" strokeLinejoin="round"/>
+                    <line x1="23" y1="9" x2="17" y2="15" strokeLinecap="round"/>
+                    <line x1="17" y1="9" x2="23" y2="15" strokeLinecap="round"/>
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+                    <path d="M11 5L6 9H2v6h4l5 4V5z" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07" strokeLinecap="round"/>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14" strokeLinecap="round"/>
+                  </svg>
+                )}
+              </button>
+            )}
+          </div>
           <div className="flex items-center gap-4 text-[#c99337]/80">
             <RuneMark className="h-7 w-7" />
             <div className="h-px w-16 bg-[#c99337]/45 md:w-28" />

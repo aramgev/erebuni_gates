@@ -43,6 +43,7 @@ export function GameCanvas({
   onGateSelected,
   onInteractionHintChange,
   isPaused = false,
+  muted = false,
 }: {
   onPlayerHit?: (damage: number) => void
   onEnemyKilled?: () => void
@@ -58,13 +59,19 @@ export function GameCanvas({
   onGateSelected?: (gate: GateType | null) => void
   onInteractionHintChange?: (hint: string) => void
   isPaused?: boolean
+  muted?: boolean
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const pausedRef = useRef(isPaused)
+  const mutedRef = useRef(muted)
 
   useEffect(() => {
     pausedRef.current = isPaused
   }, [isPaused])
+
+  useEffect(() => {
+    mutedRef.current = muted
+  }, [muted])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -118,6 +125,7 @@ export function GameCanvas({
     }
 
     const playSound = (sound: GameSound) => {
+      if (mutedRef.current) return
       const ctx = getAudioContext()
       if (!ctx) return
 
@@ -207,14 +215,14 @@ export function GameCanvas({
     const hemi = new THREE.HemisphereLight(0xffd5a2, 0x211711, 0.45)
     scene.add(hemi)
 
-    // Fortress defense environment
+    // Fortress defense environment — Urartu tuff and basalt stone
     const stoneMat = new THREE.MeshStandardMaterial({
-      color: 0x6b6a63,
+      color: 0x5a534a,
       roughness: 1,
       metalness: 0,
     })
     const darkStoneMat = new THREE.MeshStandardMaterial({
-      color: 0x2e2d2a,
+      color: 0x1e1c18,
       roughness: 1,
       metalness: 0,
     })
@@ -243,12 +251,12 @@ export function GameCanvas({
       depthWrite: false,
     })
     const basaltMat = new THREE.MeshStandardMaterial({
-      color: 0x242421,
+      color: 0x2a2520,
       roughness: 1,
       metalness: 0,
     })
     const basaltLightMat = new THREE.MeshStandardMaterial({
-      color: 0x3c3b36,
+      color: 0x3d3832,
       roughness: 1,
       metalness: 0,
     })
@@ -394,41 +402,14 @@ export function GameCanvas({
     araratGroup.name = "distant-mount-ararat"
     araratGroup.position.set(0, 2.3, -190)
 
-    const greaterArarat = new THREE.Mesh(
-      makeMountainShape([
-        [-92, 0],
-        [-46, 8],
-        [-8, 52],
-        [28, 9],
-        [76, 0],
-      ]),
-      mountainMat,
-    )
-    greaterArarat.name = "greater-ararat-cone"
-    araratGroup.add(greaterArarat)
-
-    const greaterSnow = new THREE.Mesh(
-      makeMountainShape([
-        [-22, 31],
-        [-8, 52],
-        [8, 32],
-        [2, 36],
-        [-5, 34],
-        [-13, 38],
-      ]),
-      mountainSnowMat,
-    )
-    greaterSnow.name = "greater-ararat-snow-cap"
-    greaterSnow.position.z = 0.02
-    araratGroup.add(greaterSnow)
-
+    // Smaller mountain (Sis) on the LEFT
     const lesserArarat = new THREE.Mesh(
       makeMountainShape([
-        [16, 0],
-        [52, 6],
-        [78, 31],
-        [106, 5],
-        [132, 0],
+        [-72, 0],
+        [-36, 6],
+        [-10, 31],
+        [18, 5],
+        [44, 0],
       ]),
       mountainShadowMat,
     )
@@ -438,17 +419,47 @@ export function GameCanvas({
 
     const lesserSnow = new THREE.Mesh(
       makeMountainShape([
-        [68, 20],
-        [78, 31],
-        [90, 19],
-        [84, 21],
-        [77, 20],
+        [-20, 20],
+        [-10, 31],
+        [2, 19],
+        [-4, 21],
+        [-11, 20],
       ]),
       mountainSnowMat,
     )
     lesserSnow.name = "lesser-ararat-snow-cap"
     lesserSnow.position.z = 0.03
     araratGroup.add(lesserSnow)
+
+    // Bigger mountain (Masis) on the RIGHT
+    const greaterArarat = new THREE.Mesh(
+      makeMountainShape([
+        [-52, 0],
+        [-6, 8],
+        [32, 52],
+        [68, 9],
+        [116, 0],
+      ]),
+      mountainMat,
+    )
+    greaterArarat.name = "greater-ararat-cone"
+    greaterArarat.position.z = 0.01
+    araratGroup.add(greaterArarat)
+
+    const greaterSnow = new THREE.Mesh(
+      makeMountainShape([
+        [18, 31],
+        [32, 52],
+        [48, 32],
+        [42, 36],
+        [35, 34],
+        [27, 38],
+      ]),
+      mountainSnowMat,
+    )
+    greaterSnow.name = "greater-ararat-snow-cap"
+    greaterSnow.position.z = 0.02
+    araratGroup.add(greaterSnow)
 
     scene.add(araratGroup)
 
@@ -861,8 +872,65 @@ export function GameCanvas({
       }
     }
 
-    makeTower("tower-left-rect", -platformWidth / 2 - 1.5, 1.2, 6.2, 5.4, 12.5)
-    makeTower("tower-right-rect", platformWidth / 2 + 1.5, 1.2, 6.2, 5.4, 12.5)
+    const makeRoundTower = (name: string, x: number, z: number, radius: number, height: number) => {
+      // Tapered cylindrical tower — wider at base (Urartu style)
+      const towerBody = new THREE.Mesh(
+        new THREE.CylinderGeometry(radius * 0.82, radius, height, 16),
+        basaltMat,
+      )
+      towerBody.name = name
+      towerBody.position.set(x, height / 2, z)
+      scene.add(towerBody)
+
+      // Stone banding ring
+      const band = new THREE.Mesh(
+        new THREE.CylinderGeometry(radius * 0.86, radius * 0.86, 0.3, 16),
+        basaltLightMat,
+      )
+      band.name = `${name}-stone-band`
+      band.position.set(x, height * 0.5, z)
+      scene.add(band)
+
+      // Red painted cap
+      const cap = new THREE.Mesh(
+        new THREE.CylinderGeometry(radius * 0.95, radius * 0.95, 0.6, 16),
+        redMat,
+      )
+      cap.name = `${name}-red-cap`
+      cap.position.set(x, height + 0.3, z)
+      scene.add(cap)
+
+      // White inset band
+      const whiteInset = new THREE.Mesh(
+        new THREE.BoxGeometry(radius * 1.6, 0.28, 0.08),
+        whitePaintMat,
+      )
+      whiteInset.name = `${name}-white-band`
+      whiteInset.position.set(x, height - 1.8, z - radius - 0.05)
+      scene.add(whiteInset)
+
+      // Crenels around the top
+      const crenelCount = 6
+      for (let i = 0; i < crenelCount; i++) {
+        const angle = (i / crenelCount) * Math.PI * 2
+        const cx = x + Math.sin(angle) * radius * 0.78
+        const cz = z + Math.cos(angle) * radius * 0.78
+        const crenel = new THREE.Mesh(
+          new THREE.BoxGeometry(0.9, 0.9, 0.7),
+          basaltLightMat,
+        )
+        crenel.name = `${name}-crenel-${i + 1}`
+        crenel.position.set(cx, height + 0.95, cz)
+        crenel.rotation.y = angle
+        scene.add(crenel)
+      }
+    }
+
+    // Front corner towers — round/cylindrical
+    makeRoundTower("tower-left-round", -platformWidth / 2 - 1.5, 1.2, 3.2, 12.5)
+    makeRoundTower("tower-right-round", platformWidth / 2 + 1.5, 1.2, 3.2, 12.5)
+
+    // Rear towers — rectangular
     makeTower("tower-rear-left-rect", -platformWidth / 2 + 3, platformZ + platformDepth / 2 - 0.6, 5, 4.8, 11)
     makeTower("tower-rear-right-rect", platformWidth / 2 - 3, platformZ + platformDepth / 2 - 0.6, 5, 4.8, 11)
 

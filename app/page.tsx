@@ -43,6 +43,7 @@ export default function GatesOfErebuni() {
   const [health, setHealth] = useState(initialPortal.hp ?? 100)
   const [enemiesDefeated, setEnemiesDefeated] = useState(0)
   const [currentWave, setCurrentWave] = useState(1)
+  const [muted, setMuted] = useState(false)
   const [activeBlessing, setActiveBlessing] = useState<{
     name: string
     icon: string
@@ -56,7 +57,6 @@ export default function GatesOfErebuni() {
 
   const playLoopingMusic = (src: string, volume: number, mode: "menu" | "game") => {
     if (musicModeRef.current === mode && musicRef.current && musicRef.current.src.includes(src)) {
-      // Already on the right track; keep playing without restarting.
       if (musicRef.current.paused) {
         void musicRef.current.play().catch((error) => {
           console.warn("Could not start background music", error)
@@ -68,7 +68,7 @@ export default function GatesOfErebuni() {
     if (!musicRef.current) {
       const music = new Audio(src)
       music.loop = true
-      music.volume = volume
+      music.volume = muted ? 0 : volume
       musicRef.current = music
     } else {
       musicRef.current.pause()
@@ -78,7 +78,7 @@ export default function GatesOfErebuni() {
         musicRef.current.load()
       }
       musicRef.current.loop = true
-      musicRef.current.volume = volume
+      musicRef.current.volume = muted ? 0 : volume
     }
 
     musicRef.current.currentTime = 0
@@ -88,6 +88,12 @@ export default function GatesOfErebuni() {
 
     musicModeRef.current = mode
   }
+
+  useEffect(() => {
+    if (musicRef.current) {
+      musicRef.current.volume = muted ? 0 : 0.45
+    }
+  }, [muted])
 
   const startMenuMusic = () => {
     playLoopingMusic("/ErebuniDefenseIntro.mp3", 0.45, "menu")
@@ -137,9 +143,13 @@ export default function GatesOfErebuni() {
   const handleReturnToMenu = () => {
     setHelpOpen(false)
     setStoryOpen(false)
-    // Only switch music if we were in game mode.
     if (musicModeRef.current === "game") startMenuMusic()
     setGameState("menu")
+  }
+
+  const handleQuitGame = () => {
+    if (document.pointerLockElement) document.exitPointerLock()
+    handleReturnToMenu()
   }
 
   const handlePlayerHit = (damage: number) => {
@@ -245,6 +255,7 @@ export default function GatesOfErebuni() {
           }}
           onInteractionHintChange={setInteractionHint}
           isPaused={helpOpen}
+          muted={muted}
         />
       )}
 
@@ -260,6 +271,9 @@ export default function GatesOfErebuni() {
           activeBlessing={activeBlessing}
           interactionHint={interactionHint}
           onShowHelp={handleOpenHelp}
+          muted={muted}
+          onToggleMute={() => setMuted((m) => !m)}
+          onQuit={handleQuitGame}
         />
       )}
 
@@ -272,6 +286,8 @@ export default function GatesOfErebuni() {
           onShowLeaderboard={handleShowLeaderboard}
           onShowHelp={handleOpenHelp}
           onShowStory={() => setStoryOpen(true)}
+          muted={muted}
+          onToggleMute={() => setMuted((m) => !m)}
         />
       )}
 
