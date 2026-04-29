@@ -452,6 +452,94 @@ export function GameCanvas({
 
     scene.add(araratGroup)
 
+    // Distant clouds — high up, drift slowly
+    const cloudMat = new THREE.MeshBasicMaterial({ color: 0x3a4560, transparent: true, opacity: 0.12, fog: false, depthWrite: false })
+    for (let i = 0; i < 8; i++) {
+      const cloudGroup = new THREE.Group()
+      cloudGroup.name = `cloud-${i}`
+      const numPuffs = 3 + Math.floor(seededRandom() * 3)
+      for (let j = 0; j < numPuffs; j++) {
+        const r = 5 + seededRandom() * 7
+        const puff = new THREE.Mesh(new THREE.SphereGeometry(r, 7, 5), cloudMat)
+        puff.position.set(seededRandom() * 8 - 4, seededRandom() * 1.5 - 0.5, seededRandom() * 5 - 2.5)
+        puff.scale.y = 0.3
+        cloudGroup.add(puff)
+      }
+      cloudGroup.position.set(
+        seededRandom() * 280 - 140,
+        55 + seededRandom() * 35,
+        -70 - seededRandom() * 180,
+      )
+      cloudGroup.userData.speed = 0.04 + seededRandom() * 0.12
+      scene.add(cloudGroup)
+    }
+
+    // Small scattered rocks on the sides
+    for (let i = 0; i < 25; i++) {
+      const rock = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(1, 0),
+        rockMat,
+      )
+      rock.name = `scatter-rock-${i}`
+      const side = i % 2 === 0 ? -1 : 1
+      const x = side * (9 + seededRandom() * 50)
+      const z = -10 - seededRandom() * 140
+      const s = 0.15 + seededRandom() * 0.5
+      rock.position.set(x, 0.08 + s * 0.15, z)
+      rock.rotation.set(seededRandom() * Math.PI, seededRandom() * Math.PI, seededRandom() * Math.PI)
+      rock.scale.set(s * 1.3, s * 0.4, s * 0.9)
+      scene.add(rock)
+    }
+
+    // Dry bushes — low and spread on the sides, never blocking the center view
+    const bushMat = new THREE.MeshStandardMaterial({ color: 0x4a5a30, roughness: 1, metalness: 0 })
+    const bushMatDark = new THREE.MeshStandardMaterial({ color: 0x3a4a25, roughness: 1, metalness: 0 })
+    for (let i = 0; i < 15; i++) {
+      const side = i % 2 === 0 ? -1 : 1
+      const x = side * (10 + seededRandom() * 45)
+      const z = -12 - seededRandom() * 100
+      const bush = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(0.6 + seededRandom() * 0.8, 1),
+        seededRandom() > 0.5 ? bushMat : bushMatDark,
+      )
+      bush.name = `bush-${i}`
+      bush.position.set(x, 0.3, z)
+      bush.scale.y = 0.55
+      scene.add(bush)
+    }
+
+    // Small pine trees on the far sides only — keep them short and away from center
+    const treeTrunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3728, roughness: 1, metalness: 0 })
+    const treeFoliageMat = new THREE.MeshStandardMaterial({ color: 0x2d4a1e, roughness: 0.9, metalness: 0 })
+    for (let i = 0; i < 12; i++) {
+      const side = i % 2 === 0 ? -1 : 1
+      const x = side * (22 + seededRandom() * 55)
+      const z = -18 - seededRandom() * 120
+      const treeGroup = new THREE.Group()
+      treeGroup.name = `pine-${i}`
+
+      const trunkH = 1.5 + seededRandom() * 2
+      const trunkR = 0.15 + seededRandom() * 0.15
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(trunkR * 0.7, trunkR, trunkH, 5), treeTrunkMat)
+      trunk.position.y = trunkH / 2
+      treeGroup.add(trunk)
+
+      const fH = 2 + seededRandom() * 3
+      const fR = 1 + seededRandom() * 1.2
+      const foliage = new THREE.Mesh(new THREE.ConeGeometry(fR, fH, 6), treeFoliageMat)
+      foliage.position.y = trunkH + fH / 2 - 0.4
+      treeGroup.add(foliage)
+
+      if (seededRandom() > 0.5) {
+        const f2 = new THREE.Mesh(new THREE.ConeGeometry(fR * 0.7, fH * 0.7, 6), treeFoliageMat)
+        f2.position.y = trunkH + fH - 0.3
+        treeGroup.add(f2)
+      }
+
+      treeGroup.position.set(x, 0, z)
+      scene.add(treeGroup)
+    }
+
     // Elevated fortress wall platform
     const platformHeight = 8
     const platformWidth = 40
@@ -1630,7 +1718,10 @@ export function GameCanvas({
       }
 
       scene.traverse((obj: any) => {
-        // Ambient animation loop placeholder
+        if (obj.name?.startsWith?.("cloud-") && obj.userData.speed) {
+          obj.position.x += obj.userData.speed * dt * 6
+          if (obj.position.x > 180) obj.position.x = -180
+        }
       })
 
       for (const gate of gates) {
