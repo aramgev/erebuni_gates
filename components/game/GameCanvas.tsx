@@ -540,6 +540,7 @@ export function GameCanvas({
     let portalEnterStartedAtMs = 0
     let portalRedirectAtMs = 0
     let portalFade = 0
+    let portalTargetUrl: string | null = null
     // Prevent accidental portal triggers right at start (spawn jitter, initial touch, etc.)
     const portalArmedAtMs = performance.now() + 1200
     const portalFadePlane = new THREE.Mesh(
@@ -566,7 +567,7 @@ export function GameCanvas({
       const username = (portalProfile?.username || "").trim() || "Portal Defender"
       params.set("username", username)
       // Vibe Jam requirement for this game: always pass a stable ref URL.
-      params.set("ref", "https://erebuni-gates.amiracle.net/")
+      params.set("ref", `${window.location.origin}/`)
       return `https://vibej.am/portal/2026?${params.toString()}`
     }
 
@@ -574,6 +575,13 @@ export function GameCanvas({
       const ref = (portalProfile?.ref || "").trim()
       if (!ref) return null
       const base = /^https?:\/\//i.test(ref) ? ref : `https://${ref}`
+      // Prevent infinite loops if ref points back to this same site.
+      try {
+        const baseUrl = new URL(base)
+        if (baseUrl.hostname === window.location.hostname) return null
+      } catch {
+        return null
+      }
       const params = new URLSearchParams()
       params.set("portal", "true")
       const username = (portalProfile?.username || "").trim() || "Portal Defender"
@@ -1587,18 +1595,23 @@ export function GameCanvas({
         } else {
         const p = camera.position
         if (horizontalDistanceTo(p, exitPortal.position) <= portalTriggerRadius) {
+          const target = buildExitPortalUrl()
           portalRedirecting = true
           portalEnterStartedAtMs = now
           portalRedirectAtMs = now + (300 + Math.random() * 500)
           portalFade = 0
+          portalTargetUrl = target
           setInteractionHint("Entering portal...")
         }
         if (returnPortal) {
           const returnUrl = buildReturnPortalUrl()
           if (returnUrl && horizontalDistanceTo(p, returnPortal.position) <= portalTriggerRadius) {
             portalRedirecting = true
-            window.location.href = returnUrl
-            return
+            portalEnterStartedAtMs = now
+            portalRedirectAtMs = now + (250 + Math.random() * 450)
+            portalFade = 0
+            portalTargetUrl = returnUrl
+            setInteractionHint("Returning...")
           }
         }
         }
@@ -1616,8 +1629,19 @@ export function GameCanvas({
         portalFadePlane.quaternion.copy(camera.quaternion)
 
         if (now >= portalRedirectAtMs) {
-          window.location.href = buildExitPortalUrl()
-          return
+          const target = portalTargetUrl
+          if (target) {
+            // Extra safety: don't redirect to the exact current URL.
+            if (target !== window.location.href) {
+              window.location.assign(target)
+              return
+            }
+          }
+          // If we couldn't redirect (invalid/loop), just cancel the transition.
+          portalRedirecting = false
+          portalRedirectAtMs = 0
+          portalTargetUrl = null
+          setInteractionHint("")
         }
       } else {
         ;(portalFadePlane.material as any).opacity = 0
