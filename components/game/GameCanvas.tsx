@@ -236,18 +236,6 @@ export function GameCanvas({
       color: 0xd2a33f,
       side: THREE.DoubleSide,
     })
-    const mountainMat = new THREE.MeshBasicMaterial({
-      color: 0x384050,
-      fog: false,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    })
-    const mountainShadowMat = new THREE.MeshBasicMaterial({
-      color: 0x262c3a,
-      fog: false,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    })
     const mountainSnowMat = new THREE.MeshBasicMaterial({
       color: 0xf0eadc,
       fog: false,
@@ -388,6 +376,19 @@ export function GameCanvas({
       shape.lineTo(points[0][0], points[0][1])
       return new THREE.ShapeGeometry(shape)
     }
+
+    const mountainMat = new THREE.MeshBasicMaterial({
+      color: 0x384050,
+      fog: false,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    })
+    const mountainShadowMat = new THREE.MeshBasicMaterial({
+      color: 0x262c3a,
+      fog: false,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    })
 
     const araratGroup = new THREE.Group()
     araratGroup.name = "distant-mount-ararat"
@@ -930,10 +931,20 @@ export function GameCanvas({
       speed: number,
       breachDamage: number,
       health: number,
+      kind?: EnemyKind,
     ) => {
-      const enemyAsset = enemyCatalog[Math.floor(Math.random() * enemyCatalog.length)]
+      const chosenKind = kind ?? enemyCatalog[Math.floor(Math.random() * enemyCatalog.length)].kind
+      const kindTextures = enemyTexturePaths[chosenKind]
+      const texturePath = kindTextures[Math.floor(Math.random() * kindTextures.length)]
+      let texture = enemyCatalog.find((e) => e.kind === chosenKind && e.path === texturePath)?.texture
+      if (!texture) {
+        texture = textureLoader.load(texturePath)
+        texture.colorSpace = THREE.SRGBColorSpace
+        texture.minFilter = THREE.LinearFilter
+        texture.magFilter = THREE.LinearFilter
+      }
       const material = new THREE.SpriteMaterial({
-        map: enemyAsset.texture,
+        map: texture,
         color: new THREE.Color(0xffffff),
         transparent: true,
         alphaTest: 0.1,
@@ -945,18 +956,24 @@ export function GameCanvas({
       const sprite = new THREE.Sprite(material)
       sprite.name = name
       sprite.position.set(x, 1.5, z)
-      sprite.scale.set(3, 3, 1)
+
+      const kindScale = chosenKind === "stone-golem" ? 1.4 : chosenKind === "spirit" ? 0.85 : 1
+      sprite.scale.set(3 * kindScale, 3 * kindScale, 1)
       sprite.castShadow = false
       sprite.receiveShadow = false
       scene.add(sprite)
-      console.log("enemy spawned", name, "pos", sprite.position.toArray())
+
+      const kindSpeedMult = chosenKind === "stone-golem" ? 0.65 : chosenKind === "spirit" ? 1.5 : 1
+      const kindHealthMult = chosenKind === "stone-golem" ? 2 : chosenKind === "spirit" ? 0.5 : 1
+      const kindDamageMult = chosenKind === "stone-golem" ? 2 : chosenKind === "spirit" ? 0.75 : 1
+
       enemies.push({
         mesh: sprite,
-        kind: enemyAsset.kind,
-        speed,
-        breachDamage,
-        health,
-        radius: 0.9,
+        kind: chosenKind,
+        speed: speed * kindSpeedMult,
+        breachDamage: breachDamage * kindDamageMult,
+        health: health * kindHealthMult,
+        radius: 0.9 * kindScale,
         lastDamageAtMs: 0,
         baseY: 1.5,
         floatPhase: Math.random() * Math.PI * 2,
@@ -968,19 +985,54 @@ export function GameCanvas({
       const idx = enemies.findIndex((e) => e.mesh === mesh)
       if (idx === -1) return false
       const [enemy] = enemies.splice(idx, 1)
+      const pos = enemy.mesh.position.clone()
       scene.remove(enemy.mesh)
       playSound("enemyDeath")
 
       const mat = enemy.mesh.material
       if (mat?.dispose) mat.dispose()
       onEnemyKilled?.()
-      console.log("enemy killed")
+
+      spawnDeathParticles(pos, enemy.kind)
 
       // Wave clear check
       if (phase.mode === "PLAYING_WAVE" && enemies.length === 0) {
         completeWave()
       }
       return true
+    }
+
+    const spawnDeathParticles = (position: typeof camera.position, kind: EnemyKind) => {
+      const particleCount = kind === "stone-golem" ? 12 : 8
+      const color = kind === "spirit" ? 0x8866ff : kind === "stone-golem" ? 0x888888 : 0xffd98a
+      const particleGeo = new THREE.SphereGeometry(0.08, 4, 4)
+      const particleMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 })
+
+      for (let i = 0; i < particleCount; i++) {
+        const particle = new THREE.Mesh(particleGeo, particleMat.clone())
+        particle.position.copy(position)
+        scene.add(particle)
+
+        const velocity = new THREE.Vector3(
+          (Math.random() - 0.5) * 4,
+          Math.random() * 3 + 1,
+          (Math.random() - 0.5) * 4,
+        )
+        const lifetime = 600 + Math.random() * 400
+
+        effects.push({
+          obj: particle,
+          expiresAtMs: performance.now() + lifetime,
+          update: (now: number) => {
+            const elapsed = now - (performance.now() - lifetime + lifetime)
+            const t = Math.min(1, elapsed / lifetime)
+            particle.position.add(velocity.clone().multiplyScalar(0.016))
+            velocity.y -= 0.08
+            particle.material.opacity = 1 - t
+            particle.scale.setScalar(1 - t * 0.5)
+          },
+        })
+      }
     }
 
     const damageEnemy = (enemy: Enemy, damage: number) => {
@@ -1082,6 +1134,52 @@ export function GameCanvas({
       console.log(`wave started: ${wave}`, "modifier:", activeModifier ?? "none")
       console.log("current gamePhase", phase.mode)
       playSound("waveStart")
+      spawnWaveAnnouncement(wave, gate)
+    }
+
+    const spawnWaveAnnouncement = (wave: number, gate: GateType | null) => {
+      const canvas = document.createElement("canvas")
+      canvas.width = 512
+      canvas.height = 128
+      const ctx = canvas.getContext("2d")!
+      ctx.fillStyle = "rgba(0,0,0,0)"
+      ctx.fillRect(0, 0, 512, 128)
+      ctx.font = "bold 56px Georgia, serif"
+      ctx.textAlign = "center"
+      ctx.textBaseline = "middle"
+      ctx.fillStyle = "#d4a853"
+      ctx.fillText(`Wave ${wave}`, 256, 50)
+      if (gate) {
+        ctx.font = "28px Georgia, serif"
+        ctx.fillStyle = "#a08040"
+        const gateLabels: Record<GateType, string> = { fire: "Fire Trial", shadow: "Shadow Trial", storm: "Storm Trial" }
+        ctx.fillText(gateLabels[gate], 256, 95)
+      }
+
+      const texture = new THREE.CanvasTexture(canvas)
+      texture.colorSpace = THREE.SRGBColorSpace
+      const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 1, depthWrite: false, fog: false })
+      const sprite = new THREE.Sprite(spriteMat)
+      sprite.scale.set(8, 2, 1)
+      sprite.position.set(camera.position.x, camera.position.y + 2.5, camera.position.z - 6)
+      scene.add(sprite)
+
+      const startTime = performance.now()
+      const duration = 2500
+      effects.push({
+        obj: sprite,
+        expiresAtMs: startTime + duration,
+        update: (now: number) => {
+          const elapsed = now - startTime
+          const t = elapsed / duration
+          if (t < 0.15) {
+            sprite.material.opacity = t / 0.15
+          } else if (t > 0.7) {
+            sprite.material.opacity = 1 - (t - 0.7) / 0.3
+          }
+          sprite.position.set(camera.position.x, camera.position.y + 2.5, camera.position.z - 6)
+        },
+      })
     }
 
     const setGatesVisible = (visible: boolean) => {
@@ -1092,8 +1190,6 @@ export function GameCanvas({
       console.log(visible ? "gates shown" : "gates hidden")
     }
 
-    startWave(1, null)
-
     // Shooting (raycast from camera center)
     const raycaster = new THREE.Raycaster()
     const aim = new THREE.Vector2(0, 0)
@@ -1102,6 +1198,8 @@ export function GameCanvas({
     )
 
     const effects: { obj: any; expiresAtMs: number; update?: (now: number) => void }[] = []
+
+    startWave(1, null)
 
     const arrowShaftGeo = new THREE.CylinderGeometry(0.025, 0.025, 1.2, 8)
     const arrowHeadGeo = new THREE.ConeGeometry(0.09, 0.28, 10)
@@ -1531,6 +1629,10 @@ export function GameCanvas({
         effects.splice(i, 1)
       }
 
+      scene.traverse((obj: any) => {
+        // Ambient animation loop placeholder
+      })
+
       for (const gate of gates) {
         gate.mesh.lookAt(camera.position.x, gate.mesh.position.y, camera.position.z)
       }
@@ -1683,6 +1785,9 @@ export function GameCanvas({
         }
       })
       renderer.dispose()
+      if (audioContext) {
+        audioContext.close()
+      }
     }
   }, [])
 

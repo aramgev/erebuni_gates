@@ -6,6 +6,8 @@ interface GameHUDProps {
   health: number
   maxHealth: number
   gatesSurvived: number
+  enemiesDefeated: number
+  currentWave: number
   username?: string
   activeBlessing: {
     name: string
@@ -19,6 +21,8 @@ export function GameHUD({
   health,
   maxHealth,
   gatesSurvived,
+  enemiesDefeated,
+  currentWave,
   username,
   activeBlessing,
   interactionHint,
@@ -70,14 +74,17 @@ export function GameHUD({
         {/* Score - Top center */}
         <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center gap-1">
           <span className="text-xs text-muted-foreground tracking-wider uppercase">
-            Gates Survived
+            Wave {currentWave}
           </span>
           <div className="relative">
             <span className="text-4xl md:text-5xl font-bold text-primary tabular-nums">
-              {gatesSurvived}
+              {enemiesDefeated}
             </span>
             <div className="absolute inset-0 blur-lg bg-primary/20 -z-10" />
           </div>
+          <span className="text-xs text-muted-foreground">
+            {gatesSurvived} gates survived
+          </span>
         </div>
 
         {/* Active blessing - Top right */}

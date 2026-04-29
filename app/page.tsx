@@ -41,7 +41,7 @@ export default function GatesOfErebuni() {
   const [playerUsername, setPlayerUsername] = useState(initialPortal.profile.portal ? initialPortal.profile.username : "")
   const [gameState, setGameState] = useState<GameState>(initialPortal.profile.portal ? "playing" : "menu")
   const [health, setHealth] = useState(initialPortal.hp ?? 100)
-  const [gatesSurvived, setGatesSurvived] = useState(0)
+  const [enemiesDefeated, setEnemiesDefeated] = useState(0)
   const [currentWave, setCurrentWave] = useState(1)
   const [activeBlessing, setActiveBlessing] = useState<{
     name: string
@@ -110,7 +110,7 @@ export default function GatesOfErebuni() {
       setPortalProfile((prev) => ({ ...prev, username: normalizedUsername }))
     }
     setHealth(100)
-    setGatesSurvived(0)
+    setEnemiesDefeated(0)
     setCurrentWave(1)
     setActiveBlessing(null)
     setInteractionHint("")
@@ -183,11 +183,11 @@ export default function GatesOfErebuni() {
     didSubmitGameOverScoreRef.current = true
     void submitScore({
       username: portalProfile.username,
-      score: gatesSurvived,
+      score: enemiesDefeated,
       wave: currentWave,
-      gatesSurvived,
+      gatesSurvived: currentWave - 1,
     })
-  }, [currentWave, gameState, gatesSurvived, portalProfile.username, submitScore])
+  }, [currentWave, gameState, enemiesDefeated, portalProfile.username, submitScore])
 
   useEffect(() => {
     return () => stopGameMusic()
@@ -200,7 +200,7 @@ export default function GatesOfErebuni() {
     if (profile.portal) {
       setPlayerUsername(profile.username)
       setHealth(hp ?? 100)
-      setGatesSurvived(0)
+      setEnemiesDefeated(0)
       setCurrentWave(1)
       setActiveBlessing(null)
       setInteractionHint("")
@@ -228,7 +228,7 @@ export default function GatesOfErebuni() {
       {gameState === "playing" && (
         <GameCanvas
           onPlayerHit={handlePlayerHit}
-          onEnemyKilled={() => setGatesSurvived((s) => s + 1)}
+          onEnemyKilled={() => setEnemiesDefeated((s) => s + 1)}
           onWaveChange={setCurrentWave}
           portalProfile={portalProfile}
           getCurrentHp={() => health}
@@ -253,7 +253,9 @@ export default function GatesOfErebuni() {
         <GameHUD
           health={health}
           maxHealth={100}
-          gatesSurvived={gatesSurvived}
+          gatesSurvived={currentWave - 1}
+          enemiesDefeated={enemiesDefeated}
+          currentWave={currentWave}
           username={portalProfile.username}
           activeBlessing={activeBlessing}
           interactionHint={interactionHint}
@@ -279,7 +281,9 @@ export default function GatesOfErebuni() {
 
       {gameState === "gameover" && (
         <GameOver
-          gatesSurvived={gatesSurvived}
+          gatesSurvived={currentWave - 1}
+          enemiesDefeated={enemiesDefeated}
+          currentWave={currentWave}
           onPlayAgain={handlePlayAgain}
           onReturnToMenu={handleReturnToMenu}
         />

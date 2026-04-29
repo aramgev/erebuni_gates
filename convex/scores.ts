@@ -31,7 +31,10 @@ export const submitScore = mutation({
 export const getTopScores = query({
   args: {},
   handler: async (ctx) => {
-    const rows = await ctx.db.query("scores").collect()
-    return rows.sort((a, b) => b.score - a.score).slice(0, 20)
+    return await ctx.db
+      .query("scores")
+      .withIndex("by_score")
+      .order("desc")
+      .take(20)
   },
 })
