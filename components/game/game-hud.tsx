@@ -6,6 +6,8 @@ interface GameHUDProps {
   health: number
   maxHealth: number
   gatesSurvived: number
+  enemiesDefeated: number
+  currentWave: number
   username?: string
   activeBlessing: {
     name: string
@@ -13,16 +15,24 @@ interface GameHUDProps {
   } | null
   interactionHint?: string
   onShowHelp?: () => void
+  muted?: boolean
+  onToggleMute?: () => void
+  onQuit?: () => void
 }
 
 export function GameHUD({
   health,
   maxHealth,
   gatesSurvived,
+  enemiesDefeated,
+  currentWave,
   username,
   activeBlessing,
   interactionHint,
   onShowHelp,
+  muted = false,
+  onToggleMute,
+  onQuit,
 }: GameHUDProps) {
   const healthPercentage = (health / maxHealth) * 100
 
@@ -70,22 +80,42 @@ export function GameHUD({
         {/* Score - Top center */}
         <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center gap-1">
           <span className="text-xs text-muted-foreground tracking-wider uppercase">
-            Gates Survived
+            Wave {currentWave}
           </span>
           <div className="relative">
             <span className="text-4xl md:text-5xl font-bold text-primary tabular-nums">
-              {gatesSurvived}
+              {enemiesDefeated}
             </span>
             <div className="absolute inset-0 blur-lg bg-primary/20 -z-10" />
           </div>
+          <span className="text-xs text-muted-foreground">
+            {gatesSurvived} gates survived
+          </span>
         </div>
 
         {/* Active blessing - Top right */}
         <div className="flex flex-col items-end gap-1.5">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground tracking-wider uppercase">
-              Blessing
-            </span>
+            <button
+              type="button"
+              onClick={onToggleMute}
+              className="pointer-events-auto flex h-8 w-8 items-center justify-center rounded-sm border border-primary/40 bg-secondary/60 text-sm font-bold text-primary backdrop-blur-sm transition-colors hover:bg-primary/20"
+              aria-label={muted ? "Unmute" : "Mute"}
+            >
+              {muted ? (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+                  <path d="M11 5L6 9H2v6h4l5 4V5z" strokeLinecap="round" strokeLinejoin="round"/>
+                  <line x1="23" y1="9" x2="17" y2="15" strokeLinecap="round"/>
+                  <line x1="17" y1="9" x2="23" y2="15" strokeLinecap="round"/>
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+                  <path d="M11 5L6 9H2v6h4l5 4V5z" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07" strokeLinecap="round"/>
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14" strokeLinecap="round"/>
+                </svg>
+              )}
+            </button>
             <button
               type="button"
               onClick={onShowHelp}
@@ -128,8 +158,22 @@ export function GameHUD({
       )}
 
       {/* Decorative corner runes */}
-      <div className="absolute bottom-4 left-4 opacity-30">
-        <CornerRune className="w-8 h-8 text-primary" />
+      <div className="absolute bottom-4 left-4 flex items-center gap-3">
+        <CornerRune className="w-8 h-8 text-primary opacity-30" />
+        {onQuit && (
+          <button
+            type="button"
+            onClick={onQuit}
+            className="pointer-events-auto flex items-center gap-1.5 px-3 py-1.5 rounded-sm border border-primary/30 bg-secondary/40 text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm transition-colors hover:bg-primary/15 hover:text-primary"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" strokeLinecap="round" strokeLinejoin="round"/>
+              <polyline points="16 17 21 12 16 7" strokeLinecap="round" strokeLinejoin="round"/>
+              <line x1="21" y1="12" x2="9" y2="12" strokeLinecap="round"/>
+            </svg>
+            Quit
+          </button>
+        )}
       </div>
       <div className="absolute bottom-4 right-4 opacity-30 scale-x-[-1]">
         <CornerRune className="w-8 h-8 text-primary" />

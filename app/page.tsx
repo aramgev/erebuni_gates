@@ -41,8 +41,9 @@ export default function GatesOfErebuni() {
   const [playerUsername, setPlayerUsername] = useState(initialPortal.profile.portal ? initialPortal.profile.username : "")
   const [gameState, setGameState] = useState<GameState>(initialPortal.profile.portal ? "playing" : "menu")
   const [health, setHealth] = useState(initialPortal.hp ?? 100)
-  const [gatesSurvived, setGatesSurvived] = useState(0)
+  const [enemiesDefeated, setEnemiesDefeated] = useState(0)
   const [currentWave, setCurrentWave] = useState(1)
+  const [muted, setMuted] = useState(false)
   const [activeBlessing, setActiveBlessing] = useState<{
     name: string
     icon: string
@@ -52,11 +53,11 @@ export default function GatesOfErebuni() {
   const [storyOpen, setStoryOpen] = useState(false)
   const musicRef = useRef<HTMLAudioElement | null>(null)
   const musicModeRef = useRef<"menu" | "game" | null>(null)
+  const musicEndedRef = useRef(false)
   const didSubmitGameOverScoreRef = useRef(false)
 
   const playLoopingMusic = (src: string, volume: number, mode: "menu" | "game") => {
     if (musicModeRef.current === mode && musicRef.current && musicRef.current.src.includes(src)) {
-      // Already on the right track; keep playing without restarting.
       if (musicRef.current.paused) {
         void musicRef.current.play().catch((error) => {
           console.warn("Could not start background music", error)
@@ -67,9 +68,20 @@ export default function GatesOfErebuni() {
 
     if (!musicRef.current) {
       const music = new Audio(src)
-      music.loop = true
-      music.volume = volume
+      music.loop = false
+      music.volume = muted ? 0 : volume
       musicRef.current = music
+
+      music.addEventListener("ended", () => {
+        if (musicModeRef.current === "game" && musicRef.current?.src.includes("ErebuniDefense.mp3") && !musicRef.current.src.includes("ErebuniDefense2")) {
+          playLoopingMusic("/ErebuniDefense2.mp3", 0.45, "game")
+        } else if (musicModeRef.current === "game" && musicRef.current?.src.includes("ErebuniDefense2.mp3")) {
+          playLoopingMusic("/ErebuniDefense.mp3", 0.45, "game")
+        } else if (musicModeRef.current === "menu" && musicRef.current) {
+          musicRef.current.currentTime = 0
+          void musicRef.current.play().catch(() => {})
+        }
+      })
     } else {
       musicRef.current.pause()
       musicRef.current.currentTime = 0
@@ -77,8 +89,8 @@ export default function GatesOfErebuni() {
         musicRef.current.src = src
         musicRef.current.load()
       }
-      musicRef.current.loop = true
-      musicRef.current.volume = volume
+      musicRef.current.loop = false
+      musicRef.current.volume = muted ? 0 : volume
     }
 
     musicRef.current.currentTime = 0
@@ -88,6 +100,12 @@ export default function GatesOfErebuni() {
 
     musicModeRef.current = mode
   }
+
+  useEffect(() => {
+    if (musicRef.current) {
+      musicRef.current.volume = muted ? 0 : 0.45
+    }
+  }, [muted])
 
   const startMenuMusic = () => {
     playLoopingMusic("/ErebuniDefenseIntro.mp3", 0.45, "menu")
@@ -110,7 +128,7 @@ export default function GatesOfErebuni() {
       setPortalProfile((prev) => ({ ...prev, username: normalizedUsername }))
     }
     setHealth(100)
-    setGatesSurvived(0)
+    setEnemiesDefeated(0)
     setCurrentWave(1)
     setActiveBlessing(null)
     setInteractionHint("")
@@ -137,9 +155,13 @@ export default function GatesOfErebuni() {
   const handleReturnToMenu = () => {
     setHelpOpen(false)
     setStoryOpen(false)
-    // Only switch music if we were in game mode.
     if (musicModeRef.current === "game") startMenuMusic()
     setGameState("menu")
+  }
+
+  const handleQuitGame = () => {
+    if (document.pointerLockElement) document.exitPointerLock()
+    handleReturnToMenu()
   }
 
   const handlePlayerHit = (damage: number) => {
@@ -183,11 +205,11 @@ export default function GatesOfErebuni() {
     didSubmitGameOverScoreRef.current = true
     void submitScore({
       username: portalProfile.username,
-      score: gatesSurvived,
+      score: enemiesDefeated,
       wave: currentWave,
-      gatesSurvived,
+      gatesSurvived: currentWave - 1,
     })
-  }, [currentWave, gameState, gatesSurvived, portalProfile.username, submitScore])
+  }, [currentWave, gameState, enemiesDefeated, portalProfile.username, submitScore])
 
   useEffect(() => {
     return () => stopGameMusic()
@@ -200,7 +222,7 @@ export default function GatesOfErebuni() {
     if (profile.portal) {
       setPlayerUsername(profile.username)
       setHealth(hp ?? 100)
-      setGatesSurvived(0)
+      setEnemiesDefeated(0)
       setCurrentWave(1)
       setActiveBlessing(null)
       setInteractionHint("")
@@ -228,7 +250,7 @@ export default function GatesOfErebuni() {
       {gameState === "playing" && (
         <GameCanvas
           onPlayerHit={handlePlayerHit}
-          onEnemyKilled={() => setGatesSurvived((s) => s + 1)}
+          onEnemyKilled={() => setEnemiesDefeated((s) => s + 1)}
           onWaveChange={setCurrentWave}
           portalProfile={portalProfile}
           getCurrentHp={() => health}
@@ -245,6 +267,7 @@ export default function GatesOfErebuni() {
           }}
           onInteractionHintChange={setInteractionHint}
           isPaused={helpOpen}
+          muted={muted}
         />
       )}
 
@@ -253,11 +276,16 @@ export default function GatesOfErebuni() {
         <GameHUD
           health={health}
           maxHealth={100}
-          gatesSurvived={gatesSurvived}
+          gatesSurvived={currentWave - 1}
+          enemiesDefeated={enemiesDefeated}
+          currentWave={currentWave}
           username={portalProfile.username}
           activeBlessing={activeBlessing}
           interactionHint={interactionHint}
           onShowHelp={handleOpenHelp}
+          muted={muted}
+          onToggleMute={() => setMuted((m) => !m)}
+          onQuit={handleQuitGame}
         />
       )}
 
@@ -270,6 +298,8 @@ export default function GatesOfErebuni() {
           onShowLeaderboard={handleShowLeaderboard}
           onShowHelp={handleOpenHelp}
           onShowStory={() => setStoryOpen(true)}
+          muted={muted}
+          onToggleMute={() => setMuted((m) => !m)}
         />
       )}
 
@@ -279,7 +309,9 @@ export default function GatesOfErebuni() {
 
       {gameState === "gameover" && (
         <GameOver
-          gatesSurvived={gatesSurvived}
+          gatesSurvived={currentWave - 1}
+          enemiesDefeated={enemiesDefeated}
+          currentWave={currentWave}
           onPlayAgain={handlePlayAgain}
           onReturnToMenu={handleReturnToMenu}
         />

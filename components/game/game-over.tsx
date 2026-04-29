@@ -4,11 +4,13 @@ import { Button } from "@/components/ui/button"
 
 interface GameOverProps {
   gatesSurvived: number
+  enemiesDefeated: number
+  currentWave: number
   onPlayAgain: () => void
   onReturnToMenu: () => void
 }
 
-export function GameOver({ gatesSurvived, onPlayAgain, onReturnToMenu }: GameOverProps) {
+export function GameOver({ gatesSurvived, enemiesDefeated, currentWave, onPlayAgain, onReturnToMenu }: GameOverProps) {
   return (
     <div className="absolute inset-0 z-30 flex items-center justify-center">
       {/* Dark overlay with vignette effect */}
@@ -34,25 +36,33 @@ export function GameOver({ gatesSurvived, onPlayAgain, onReturnToMenu }: GameOve
         {/* Score display */}
         <div className="flex flex-col items-center gap-2 py-6">
           <span className="text-sm text-muted-foreground tracking-widest uppercase">
-            You Survived
+            Wave Reached
           </span>
           <div className="relative">
             <span className="text-6xl md:text-8xl font-bold text-primary tabular-nums">
-              {gatesSurvived}
+              {currentWave}
             </span>
             <div className="absolute inset-0 blur-2xl bg-primary/20 -z-10" />
           </div>
-          <span className="text-lg text-muted-foreground tracking-wider">
-            {gatesSurvived === 1 ? "Gate" : "Gates"}
-          </span>
+          <div className="flex gap-6 mt-4">
+            <div className="flex flex-col items-center">
+              <span className="text-2xl font-bold text-primary tabular-nums">{enemiesDefeated}</span>
+              <span className="text-xs text-muted-foreground tracking-wider">Enemies Defeated</span>
+            </div>
+            <div className="w-px bg-border" />
+            <div className="flex flex-col items-center">
+              <span className="text-2xl font-bold text-primary tabular-nums">{gatesSurvived}</span>
+              <span className="text-xs text-muted-foreground tracking-wider">Gates Survived</span>
+            </div>
+          </div>
         </div>
 
         {/* Achievement message based on score */}
         <p className="text-sm text-muted-foreground max-w-sm">
-          {gatesSurvived === 0 && "The first step is always the hardest. Try again, warrior."}
-          {gatesSurvived > 0 && gatesSurvived < 5 && "A promising start. The gods of Urartu are watching."}
-          {gatesSurvived >= 5 && gatesSurvived < 10 && "Impressive! Khaldi himself would be proud."}
-          {gatesSurvived >= 10 && "Legendary! You have proven yourself worthy of Erebuni."}
+          {currentWave <= 1 && "The first step is always the hardest. Try again, warrior."}
+          {currentWave > 1 && currentWave <= 5 && "A promising start. The gods of Urartu are watching."}
+          {currentWave >= 5 && currentWave < 10 && "Impressive! Khaldi himself would be proud."}
+          {currentWave >= 10 && "Legendary! You have proven yourself worthy of Erebuni."}
         </p>
 
         {/* Action buttons */}

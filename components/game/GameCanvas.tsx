@@ -43,6 +43,7 @@ export function GameCanvas({
   onGateSelected,
   onInteractionHintChange,
   isPaused = false,
+  muted = false,
 }: {
   onPlayerHit?: (damage: number) => void
   onEnemyKilled?: () => void
@@ -58,13 +59,19 @@ export function GameCanvas({
   onGateSelected?: (gate: GateType | null) => void
   onInteractionHintChange?: (hint: string) => void
   isPaused?: boolean
+  muted?: boolean
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const pausedRef = useRef(isPaused)
+  const mutedRef = useRef(muted)
 
   useEffect(() => {
     pausedRef.current = isPaused
   }, [isPaused])
+
+  useEffect(() => {
+    mutedRef.current = muted
+  }, [muted])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -118,6 +125,7 @@ export function GameCanvas({
     }
 
     const playSound = (sound: GameSound) => {
+      if (mutedRef.current) return
       const ctx = getAudioContext()
       if (!ctx) return
 
@@ -207,14 +215,14 @@ export function GameCanvas({
     const hemi = new THREE.HemisphereLight(0xffd5a2, 0x211711, 0.45)
     scene.add(hemi)
 
-    // Fortress defense environment
+    // Fortress defense environment — Urartu tuff and basalt stone
     const stoneMat = new THREE.MeshStandardMaterial({
-      color: 0x6b6a63,
+      color: 0x5a534a,
       roughness: 1,
       metalness: 0,
     })
     const darkStoneMat = new THREE.MeshStandardMaterial({
-      color: 0x2e2d2a,
+      color: 0x1e1c18,
       roughness: 1,
       metalness: 0,
     })
@@ -236,18 +244,6 @@ export function GameCanvas({
       color: 0xd2a33f,
       side: THREE.DoubleSide,
     })
-    const mountainMat = new THREE.MeshBasicMaterial({
-      color: 0x384050,
-      fog: false,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    })
-    const mountainShadowMat = new THREE.MeshBasicMaterial({
-      color: 0x262c3a,
-      fog: false,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    })
     const mountainSnowMat = new THREE.MeshBasicMaterial({
       color: 0xf0eadc,
       fog: false,
@@ -255,12 +251,12 @@ export function GameCanvas({
       depthWrite: false,
     })
     const basaltMat = new THREE.MeshStandardMaterial({
-      color: 0x242421,
+      color: 0x2a2520,
       roughness: 1,
       metalness: 0,
     })
     const basaltLightMat = new THREE.MeshStandardMaterial({
-      color: 0x3c3b36,
+      color: 0x3d3832,
       roughness: 1,
       metalness: 0,
     })
@@ -389,45 +385,31 @@ export function GameCanvas({
       return new THREE.ShapeGeometry(shape)
     }
 
+    const mountainMat = new THREE.MeshBasicMaterial({
+      color: 0x384050,
+      fog: false,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    })
+    const mountainShadowMat = new THREE.MeshBasicMaterial({
+      color: 0x262c3a,
+      fog: false,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    })
+
     const araratGroup = new THREE.Group()
     araratGroup.name = "distant-mount-ararat"
     araratGroup.position.set(0, 2.3, -190)
 
-    const greaterArarat = new THREE.Mesh(
-      makeMountainShape([
-        [-92, 0],
-        [-46, 8],
-        [-8, 52],
-        [28, 9],
-        [76, 0],
-      ]),
-      mountainMat,
-    )
-    greaterArarat.name = "greater-ararat-cone"
-    araratGroup.add(greaterArarat)
-
-    const greaterSnow = new THREE.Mesh(
-      makeMountainShape([
-        [-22, 31],
-        [-8, 52],
-        [8, 32],
-        [2, 36],
-        [-5, 34],
-        [-13, 38],
-      ]),
-      mountainSnowMat,
-    )
-    greaterSnow.name = "greater-ararat-snow-cap"
-    greaterSnow.position.z = 0.02
-    araratGroup.add(greaterSnow)
-
+    // Smaller mountain (Sis) on the LEFT
     const lesserArarat = new THREE.Mesh(
       makeMountainShape([
-        [16, 0],
-        [52, 6],
-        [78, 31],
-        [106, 5],
-        [132, 0],
+        [-72, 0],
+        [-36, 6],
+        [-10, 31],
+        [18, 5],
+        [44, 0],
       ]),
       mountainShadowMat,
     )
@@ -437,11 +419,11 @@ export function GameCanvas({
 
     const lesserSnow = new THREE.Mesh(
       makeMountainShape([
-        [68, 20],
-        [78, 31],
-        [90, 19],
-        [84, 21],
-        [77, 20],
+        [-20, 20],
+        [-10, 31],
+        [2, 19],
+        [-4, 21],
+        [-11, 20],
       ]),
       mountainSnowMat,
     )
@@ -449,7 +431,125 @@ export function GameCanvas({
     lesserSnow.position.z = 0.03
     araratGroup.add(lesserSnow)
 
+    // Bigger mountain (Masis) on the RIGHT
+    const greaterArarat = new THREE.Mesh(
+      makeMountainShape([
+        [-52, 0],
+        [-6, 8],
+        [32, 52],
+        [68, 9],
+        [116, 0],
+      ]),
+      mountainMat,
+    )
+    greaterArarat.name = "greater-ararat-cone"
+    greaterArarat.position.z = 0.01
+    araratGroup.add(greaterArarat)
+
+    const greaterSnow = new THREE.Mesh(
+      makeMountainShape([
+        [18, 31],
+        [32, 52],
+        [48, 32],
+        [42, 36],
+        [35, 34],
+        [27, 38],
+      ]),
+      mountainSnowMat,
+    )
+    greaterSnow.name = "greater-ararat-snow-cap"
+    greaterSnow.position.z = 0.02
+    araratGroup.add(greaterSnow)
+
     scene.add(araratGroup)
+
+    // Distant clouds — high up, drift slowly
+    const cloudMat = new THREE.MeshBasicMaterial({ color: 0x3a4560, transparent: true, opacity: 0.12, fog: false, depthWrite: false })
+    for (let i = 0; i < 8; i++) {
+      const cloudGroup = new THREE.Group()
+      cloudGroup.name = `cloud-${i}`
+      const numPuffs = 3 + Math.floor(seededRandom() * 3)
+      for (let j = 0; j < numPuffs; j++) {
+        const r = 5 + seededRandom() * 7
+        const puff = new THREE.Mesh(new THREE.SphereGeometry(r, 7, 5), cloudMat)
+        puff.position.set(seededRandom() * 8 - 4, seededRandom() * 1.5 - 0.5, seededRandom() * 5 - 2.5)
+        puff.scale.y = 0.3
+        cloudGroup.add(puff)
+      }
+      cloudGroup.position.set(
+        seededRandom() * 280 - 140,
+        55 + seededRandom() * 35,
+        -70 - seededRandom() * 180,
+      )
+      cloudGroup.userData.speed = 0.04 + seededRandom() * 0.12
+      scene.add(cloudGroup)
+    }
+
+    // Small scattered rocks on the sides
+    for (let i = 0; i < 25; i++) {
+      const rock = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(1, 0),
+        rockMat,
+      )
+      rock.name = `scatter-rock-${i}`
+      const side = i % 2 === 0 ? -1 : 1
+      const x = side * (9 + seededRandom() * 50)
+      const z = -10 - seededRandom() * 140
+      const s = 0.15 + seededRandom() * 0.5
+      rock.position.set(x, 0.08 + s * 0.15, z)
+      rock.rotation.set(seededRandom() * Math.PI, seededRandom() * Math.PI, seededRandom() * Math.PI)
+      rock.scale.set(s * 1.3, s * 0.4, s * 0.9)
+      scene.add(rock)
+    }
+
+    // Dry bushes — low and spread on the sides, never blocking the center view
+    const bushMat = new THREE.MeshStandardMaterial({ color: 0x4a5a30, roughness: 1, metalness: 0 })
+    const bushMatDark = new THREE.MeshStandardMaterial({ color: 0x3a4a25, roughness: 1, metalness: 0 })
+    for (let i = 0; i < 15; i++) {
+      const side = i % 2 === 0 ? -1 : 1
+      const x = side * (10 + seededRandom() * 45)
+      const z = -12 - seededRandom() * 100
+      const bush = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(0.6 + seededRandom() * 0.8, 1),
+        seededRandom() > 0.5 ? bushMat : bushMatDark,
+      )
+      bush.name = `bush-${i}`
+      bush.position.set(x, 0.3, z)
+      bush.scale.y = 0.55
+      scene.add(bush)
+    }
+
+    // Small pine trees on the far sides only — keep them short and away from center
+    const treeTrunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3728, roughness: 1, metalness: 0 })
+    const treeFoliageMat = new THREE.MeshStandardMaterial({ color: 0x2d4a1e, roughness: 0.9, metalness: 0 })
+    for (let i = 0; i < 12; i++) {
+      const side = i % 2 === 0 ? -1 : 1
+      const x = side * (22 + seededRandom() * 55)
+      const z = -18 - seededRandom() * 120
+      const treeGroup = new THREE.Group()
+      treeGroup.name = `pine-${i}`
+
+      const trunkH = 1.5 + seededRandom() * 2
+      const trunkR = 0.15 + seededRandom() * 0.15
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(trunkR * 0.7, trunkR, trunkH, 5), treeTrunkMat)
+      trunk.position.y = trunkH / 2
+      treeGroup.add(trunk)
+
+      const fH = 2 + seededRandom() * 3
+      const fR = 1 + seededRandom() * 1.2
+      const foliage = new THREE.Mesh(new THREE.ConeGeometry(fR, fH, 6), treeFoliageMat)
+      foliage.position.y = trunkH + fH / 2 - 0.4
+      treeGroup.add(foliage)
+
+      if (seededRandom() > 0.5) {
+        const f2 = new THREE.Mesh(new THREE.ConeGeometry(fR * 0.7, fH * 0.7, 6), treeFoliageMat)
+        f2.position.y = trunkH + fH - 0.3
+        treeGroup.add(f2)
+      }
+
+      treeGroup.position.set(x, 0, z)
+      scene.add(treeGroup)
+    }
 
     // Elevated fortress wall platform
     const platformHeight = 8
@@ -772,8 +872,65 @@ export function GameCanvas({
       }
     }
 
-    makeTower("tower-left-rect", -platformWidth / 2 - 1.5, 1.2, 6.2, 5.4, 12.5)
-    makeTower("tower-right-rect", platformWidth / 2 + 1.5, 1.2, 6.2, 5.4, 12.5)
+    const makeRoundTower = (name: string, x: number, z: number, radius: number, height: number) => {
+      // Tapered cylindrical tower — wider at base (Urartu style)
+      const towerBody = new THREE.Mesh(
+        new THREE.CylinderGeometry(radius * 0.82, radius, height, 16),
+        basaltMat,
+      )
+      towerBody.name = name
+      towerBody.position.set(x, height / 2, z)
+      scene.add(towerBody)
+
+      // Stone banding ring
+      const band = new THREE.Mesh(
+        new THREE.CylinderGeometry(radius * 0.86, radius * 0.86, 0.3, 16),
+        basaltLightMat,
+      )
+      band.name = `${name}-stone-band`
+      band.position.set(x, height * 0.5, z)
+      scene.add(band)
+
+      // Red painted cap
+      const cap = new THREE.Mesh(
+        new THREE.CylinderGeometry(radius * 0.95, radius * 0.95, 0.6, 16),
+        redMat,
+      )
+      cap.name = `${name}-red-cap`
+      cap.position.set(x, height + 0.3, z)
+      scene.add(cap)
+
+      // White inset band
+      const whiteInset = new THREE.Mesh(
+        new THREE.BoxGeometry(radius * 1.6, 0.28, 0.08),
+        whitePaintMat,
+      )
+      whiteInset.name = `${name}-white-band`
+      whiteInset.position.set(x, height - 1.8, z - radius - 0.05)
+      scene.add(whiteInset)
+
+      // Crenels around the top
+      const crenelCount = 6
+      for (let i = 0; i < crenelCount; i++) {
+        const angle = (i / crenelCount) * Math.PI * 2
+        const cx = x + Math.sin(angle) * radius * 0.78
+        const cz = z + Math.cos(angle) * radius * 0.78
+        const crenel = new THREE.Mesh(
+          new THREE.BoxGeometry(0.9, 0.9, 0.7),
+          basaltLightMat,
+        )
+        crenel.name = `${name}-crenel-${i + 1}`
+        crenel.position.set(cx, height + 0.95, cz)
+        crenel.rotation.y = angle
+        scene.add(crenel)
+      }
+    }
+
+    // Front corner towers — round/cylindrical
+    makeRoundTower("tower-left-round", -platformWidth / 2 - 1.5, 1.2, 3.2, 12.5)
+    makeRoundTower("tower-right-round", platformWidth / 2 + 1.5, 1.2, 3.2, 12.5)
+
+    // Rear towers — rectangular
     makeTower("tower-rear-left-rect", -platformWidth / 2 + 3, platformZ + platformDepth / 2 - 0.6, 5, 4.8, 11)
     makeTower("tower-rear-right-rect", platformWidth / 2 - 3, platformZ + platformDepth / 2 - 0.6, 5, 4.8, 11)
 
@@ -930,10 +1087,20 @@ export function GameCanvas({
       speed: number,
       breachDamage: number,
       health: number,
+      kind?: EnemyKind,
     ) => {
-      const enemyAsset = enemyCatalog[Math.floor(Math.random() * enemyCatalog.length)]
+      const chosenKind = kind ?? enemyCatalog[Math.floor(Math.random() * enemyCatalog.length)].kind
+      const kindTextures = enemyTexturePaths[chosenKind]
+      const texturePath = kindTextures[Math.floor(Math.random() * kindTextures.length)]
+      let texture = enemyCatalog.find((e) => e.kind === chosenKind && e.path === texturePath)?.texture
+      if (!texture) {
+        texture = textureLoader.load(texturePath)
+        texture.colorSpace = THREE.SRGBColorSpace
+        texture.minFilter = THREE.LinearFilter
+        texture.magFilter = THREE.LinearFilter
+      }
       const material = new THREE.SpriteMaterial({
-        map: enemyAsset.texture,
+        map: texture,
         color: new THREE.Color(0xffffff),
         transparent: true,
         alphaTest: 0.1,
@@ -945,18 +1112,24 @@ export function GameCanvas({
       const sprite = new THREE.Sprite(material)
       sprite.name = name
       sprite.position.set(x, 1.5, z)
-      sprite.scale.set(3, 3, 1)
+
+      const kindScale = chosenKind === "stone-golem" ? 1.4 : chosenKind === "spirit" ? 0.85 : 1
+      sprite.scale.set(3 * kindScale, 3 * kindScale, 1)
       sprite.castShadow = false
       sprite.receiveShadow = false
       scene.add(sprite)
-      console.log("enemy spawned", name, "pos", sprite.position.toArray())
+
+      const kindSpeedMult = chosenKind === "stone-golem" ? 0.65 : chosenKind === "spirit" ? 1.5 : 1
+      const kindHealthMult = chosenKind === "stone-golem" ? 2 : chosenKind === "spirit" ? 0.5 : 1
+      const kindDamageMult = chosenKind === "stone-golem" ? 2 : chosenKind === "spirit" ? 0.75 : 1
+
       enemies.push({
         mesh: sprite,
-        kind: enemyAsset.kind,
-        speed,
-        breachDamage,
-        health,
-        radius: 0.9,
+        kind: chosenKind,
+        speed: speed * kindSpeedMult,
+        breachDamage: breachDamage * kindDamageMult,
+        health: health * kindHealthMult,
+        radius: 0.9 * kindScale,
         lastDamageAtMs: 0,
         baseY: 1.5,
         floatPhase: Math.random() * Math.PI * 2,
@@ -968,19 +1141,54 @@ export function GameCanvas({
       const idx = enemies.findIndex((e) => e.mesh === mesh)
       if (idx === -1) return false
       const [enemy] = enemies.splice(idx, 1)
+      const pos = enemy.mesh.position.clone()
       scene.remove(enemy.mesh)
       playSound("enemyDeath")
 
       const mat = enemy.mesh.material
       if (mat?.dispose) mat.dispose()
       onEnemyKilled?.()
-      console.log("enemy killed")
+
+      spawnDeathParticles(pos, enemy.kind)
 
       // Wave clear check
       if (phase.mode === "PLAYING_WAVE" && enemies.length === 0) {
         completeWave()
       }
       return true
+    }
+
+    const spawnDeathParticles = (position: typeof camera.position, kind: EnemyKind) => {
+      const particleCount = kind === "stone-golem" ? 12 : 8
+      const color = kind === "spirit" ? 0x8866ff : kind === "stone-golem" ? 0x888888 : 0xffd98a
+      const particleGeo = new THREE.SphereGeometry(0.08, 4, 4)
+      const particleMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 })
+
+      for (let i = 0; i < particleCount; i++) {
+        const particle = new THREE.Mesh(particleGeo, particleMat.clone())
+        particle.position.copy(position)
+        scene.add(particle)
+
+        const velocity = new THREE.Vector3(
+          (Math.random() - 0.5) * 4,
+          Math.random() * 3 + 1,
+          (Math.random() - 0.5) * 4,
+        )
+        const lifetime = 600 + Math.random() * 400
+
+        effects.push({
+          obj: particle,
+          expiresAtMs: performance.now() + lifetime,
+          update: (now: number) => {
+            const elapsed = now - (performance.now() - lifetime + lifetime)
+            const t = Math.min(1, elapsed / lifetime)
+            particle.position.add(velocity.clone().multiplyScalar(0.016))
+            velocity.y -= 0.08
+            particle.material.opacity = 1 - t
+            particle.scale.setScalar(1 - t * 0.5)
+          },
+        })
+      }
     }
 
     const damageEnemy = (enemy: Enemy, damage: number) => {
@@ -1004,6 +1212,46 @@ export function GameCanvas({
     const interactionDistance = 7.5
     let lastInteractionHint = ""
     let lastGateDebugAtMs = 0
+
+    // Dynamic environment — night mode / rain from wave 10
+    const isNightMode = () => waveNumber >= 10
+    let nightTransition = 0 // 0 = day, 1 = full night
+    const nightTransitionSpeed = 0.003 // how fast day→night transitions
+
+    // Night mode references
+    const nightSceneFog = new THREE.Color(0x0a0e1a)
+    const daySceneFog = new THREE.Color(0x263049)
+    const nightBg = new THREE.Color(0x060810)
+    const dayBg = new THREE.Color(0x1a2237)
+
+    // Rain system
+    const rainGeo = new THREE.BufferGeometry()
+    const rainCount = 1800
+    const rainPositions = new Float32Array(rainCount * 3)
+    const rainVelocities = new Float32Array(rainCount)
+    for (let i = 0; i < rainCount; i++) {
+      rainPositions[i * 3] = (Math.random() - 0.5) * 120
+      rainPositions[i * 3 + 1] = Math.random() * 45
+      rainPositions[i * 3 + 2] = (Math.random() - 0.5) * 120 - 20
+      rainVelocities[i] = 0.4 + Math.random() * 0.5
+    }
+    rainGeo.setAttribute("position", new THREE.BufferAttribute(rainPositions, 3))
+    const rainMat = new THREE.PointsMaterial({
+      color: 0x8899bb,
+      size: 0.12,
+      transparent: true,
+      opacity: 0.35,
+      fog: true,
+      depthWrite: false,
+    })
+    const rainSystem = new THREE.Points(rainGeo, rainMat)
+    rainSystem.name = "rain-system"
+    rainSystem.visible = false
+    scene.add(rainSystem)
+
+    // Lightning flashes
+    let lightningFlash = 0
+    let nextLightningAt = performance.now() + 8000 + Math.random() * 12000
 
     const setInteractionHint = (hint: string) => {
       if (hint === lastInteractionHint) return
@@ -1082,6 +1330,52 @@ export function GameCanvas({
       console.log(`wave started: ${wave}`, "modifier:", activeModifier ?? "none")
       console.log("current gamePhase", phase.mode)
       playSound("waveStart")
+      spawnWaveAnnouncement(wave, gate)
+    }
+
+    const spawnWaveAnnouncement = (wave: number, gate: GateType | null) => {
+      const canvas = document.createElement("canvas")
+      canvas.width = 512
+      canvas.height = 128
+      const ctx = canvas.getContext("2d")!
+      ctx.fillStyle = "rgba(0,0,0,0)"
+      ctx.fillRect(0, 0, 512, 128)
+      ctx.font = "bold 56px Georgia, serif"
+      ctx.textAlign = "center"
+      ctx.textBaseline = "middle"
+      ctx.fillStyle = "#d4a853"
+      ctx.fillText(`Wave ${wave}`, 256, 50)
+      if (gate) {
+        ctx.font = "28px Georgia, serif"
+        ctx.fillStyle = "#a08040"
+        const gateLabels: Record<GateType, string> = { fire: "Fire Trial", shadow: "Shadow Trial", storm: "Storm Trial" }
+        ctx.fillText(gateLabels[gate], 256, 95)
+      }
+
+      const texture = new THREE.CanvasTexture(canvas)
+      texture.colorSpace = THREE.SRGBColorSpace
+      const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 1, depthWrite: false, fog: false })
+      const sprite = new THREE.Sprite(spriteMat)
+      sprite.scale.set(8, 2, 1)
+      sprite.position.set(camera.position.x, camera.position.y + 2.5, camera.position.z - 6)
+      scene.add(sprite)
+
+      const startTime = performance.now()
+      const duration = 2500
+      effects.push({
+        obj: sprite,
+        expiresAtMs: startTime + duration,
+        update: (now: number) => {
+          const elapsed = now - startTime
+          const t = elapsed / duration
+          if (t < 0.15) {
+            sprite.material.opacity = t / 0.15
+          } else if (t > 0.7) {
+            sprite.material.opacity = 1 - (t - 0.7) / 0.3
+          }
+          sprite.position.set(camera.position.x, camera.position.y + 2.5, camera.position.z - 6)
+        },
+      })
     }
 
     const setGatesVisible = (visible: boolean) => {
@@ -1092,8 +1386,6 @@ export function GameCanvas({
       console.log(visible ? "gates shown" : "gates hidden")
     }
 
-    startWave(1, null)
-
     // Shooting (raycast from camera center)
     const raycaster = new THREE.Raycaster()
     const aim = new THREE.Vector2(0, 0)
@@ -1102,6 +1394,8 @@ export function GameCanvas({
     )
 
     const effects: { obj: any; expiresAtMs: number; update?: (now: number) => void }[] = []
+
+    startWave(1, null)
 
     const arrowShaftGeo = new THREE.CylinderGeometry(0.025, 0.025, 1.2, 8)
     const arrowHeadGeo = new THREE.ConeGeometry(0.09, 0.28, 10)
@@ -1531,6 +1825,63 @@ export function GameCanvas({
         effects.splice(i, 1)
       }
 
+      scene.traverse((obj: any) => {
+        if (obj.name?.startsWith?.("cloud-") && obj.userData.speed) {
+          obj.position.x += obj.userData.speed * dt * 6
+          if (obj.position.x > 180) obj.position.x = -180
+        }
+      })
+
+      // Dynamic environment: day→night transition from wave 10
+      const targetNight = isNightMode() ? 1 : 0
+      if (targetNight > nightTransition) {
+        nightTransition = Math.min(1, nightTransition + nightTransitionSpeed)
+      } else if (targetNight < nightTransition) {
+        nightTransition = Math.max(0, nightTransition - nightTransitionSpeed * 0.5)
+      }
+
+      // Blend fog and background colors
+      const fogBlend = daySceneFog.clone().lerp(nightSceneFog, nightTransition)
+      scene.fog.color.copy(fogBlend)
+      const bgBlend = dayBg.clone().lerp(nightBg, nightTransition)
+      scene.background = bgBlend
+
+      // Dim lights at night
+      ambientLight.intensity = 0.48 * (1 - nightTransition * 0.55)
+      directionalLight.intensity = 1.15 * (1 - nightTransition * 0.65)
+      hemi.intensity = 0.45 * (1 - nightTransition * 0.5)
+
+      // Rain system
+      if (nightTransition > 0.15) {
+        rainSystem.visible = true
+        rainMat.opacity = Math.max(0, (nightTransition - 0.15) * 0.42)
+        const positions = rainGeo.attributes.position.array as Float32Array
+        for (let i = 0; i < rainCount; i++) {
+          positions[i * 3 + 1] -= rainVelocities[i] * dt * 55
+          positions[i * 3] -= dt * 3 // wind drift
+          if (positions[i * 3 + 1] < 0) {
+            positions[i * 3 + 1] = 40 + Math.random() * 5
+            positions[i * 3] = (Math.random() - 0.5) * 120 + camera.position.x
+            positions[i * 3 + 2] = (Math.random() - 0.5) * 120 + camera.position.z - 20
+          }
+        }
+        rainGeo.attributes.position.needsUpdate = true
+      } else {
+        rainSystem.visible = false
+      }
+
+      // Lightning flashes
+      if (nightTransition > 0.3 && now > nextLightningAt) {
+        lightningFlash = 1
+        nextLightningAt = now + 6000 + Math.random() * 15000
+      }
+      if (lightningFlash > 0) {
+        lightningFlash -= dt * 3.5
+        const flashIntensity = Math.max(0, lightningFlash)
+        directionalLight.intensity = 1.15 * (1 - nightTransition * 0.65) + flashIntensity * 2.5
+        ambientLight.intensity = 0.48 * (1 - nightTransition * 0.55) + flashIntensity * 0.8
+      }
+
       for (const gate of gates) {
         gate.mesh.lookAt(camera.position.x, gate.mesh.position.y, camera.position.z)
       }
@@ -1683,6 +2034,9 @@ export function GameCanvas({
         }
       })
       renderer.dispose()
+      if (audioContext) {
+        audioContext.close()
+      }
     }
   }, [])
 
