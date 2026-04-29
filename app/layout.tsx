@@ -3,6 +3,7 @@ import { Cinzel, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import Script from 'next/script'
 import './globals.css'
+import { AppConvexProvider } from '@/components/convex-provider'
 
 const cinzel = Cinzel({ 
   subsets: ["latin"],
@@ -49,7 +50,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="bg-background">
       <body className={`${cinzel.variable} font-sans antialiased`}>
-        {children}
+        <AppConvexProvider>{children}</AppConvexProvider>
         {/* Vibe Jam 2026 entrant widget (required) */}
         <Script async src="https://vibej.am/2026/widget.js" strategy="afterInteractive" />
         {/* Hotjar Tracking Code for ErebuniGates */}

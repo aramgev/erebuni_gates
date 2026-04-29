@@ -3,8 +3,11 @@
 import Image from "next/image"
 
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 
 interface MainMenuProps {
+  username: string
+  onUsernameChange: (username: string) => void
   onStartGame: () => void
   onShowLeaderboard: () => void
   onShowHelp: () => void
@@ -12,6 +15,8 @@ interface MainMenuProps {
 }
 
 export function MainMenu({
+  username,
+  onUsernameChange,
   onStartGame,
   onShowLeaderboard,
   onShowHelp,
@@ -66,6 +71,20 @@ export function MainMenu({
                   Choose your trials. Embrace the blessings of Khaldi. Hold the
                   wall. Survive the night.
                 </p>
+              </div>
+
+              <div className="max-w-sm space-y-2">
+                <label htmlFor="username" className="text-xs font-semibold uppercase tracking-[0.18em] text-[#c99337]">
+                  Defender Name
+                </label>
+                <Input
+                  id="username"
+                  maxLength={20}
+                  value={username}
+                  onChange={(event) => onUsernameChange(event.target.value)}
+                  placeholder="Anonymous Defender"
+                  className="h-12 border-[#c99337]/40 bg-[#150d0d]/60 text-[#f4ead2] placeholder:text-[#f4ead2]/50"
+                />
               </div>
 
               <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:flex-wrap">

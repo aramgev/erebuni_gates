@@ -1,9 +1,11 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { GameCanvas, MainMenu, GameHUD, GameOver, HelpModal, StoryModal } from "@/components/game"
+import { useMutation } from "convex/react"
+import { api } from "@/convex/_generated/api"
+import { GameCanvas, MainMenu, GameHUD, GameOver, HelpModal, StoryModal, LeaderboardScreen } from "@/components/game"
 
-type GameState = "menu" | "playing" | "gameover"
+type GameState = "menu" | "playing" | "gameover" | "leaderboard"
 type GateType = "fire" | "shadow" | "storm"
 
 type PortalProfile = {
@@ -34,10 +36,13 @@ const readPortalProfile = (): { profile: PortalProfile; hp?: number } => {
 
 export default function GatesOfErebuni() {
   const initialPortal = readPortalProfile()
+  const submitScore = useMutation(api.scores.submitScore)
   const [portalProfile, setPortalProfile] = useState<PortalProfile>(initialPortal.profile)
+  const [playerUsername, setPlayerUsername] = useState(initialPortal.profile.portal ? initialPortal.profile.username : "")
   const [gameState, setGameState] = useState<GameState>(initialPortal.profile.portal ? "playing" : "menu")
   const [health, setHealth] = useState(initialPortal.hp ?? 100)
   const [gatesSurvived, setGatesSurvived] = useState(0)
+  const [currentWave, setCurrentWave] = useState(1)
   const [activeBlessing, setActiveBlessing] = useState<{
     name: string
     icon: string
@@ -46,6 +51,7 @@ export default function GatesOfErebuni() {
   const [helpOpen, setHelpOpen] = useState(false)
   const [storyOpen, setStoryOpen] = useState(false)
   const musicRef = useRef<HTMLAudioElement | null>(null)
+  const didSubmitGameOverScoreRef = useRef(false)
 
   const startGameMusic = () => {
     if (!musicRef.current) {
@@ -68,19 +74,24 @@ export default function GatesOfErebuni() {
   }
 
   const handleStartGame = () => {
+    const normalizedUsername = playerUsername.trim().slice(0, 20) || "Anonymous Defender"
+    if (!portalProfile.portal) {
+      setPortalProfile((prev) => ({ ...prev, username: normalizedUsername }))
+    }
     setHealth(100)
     setGatesSurvived(0)
+    setCurrentWave(1)
     setActiveBlessing(null)
     setInteractionHint("")
     setHelpOpen(false)
     setStoryOpen(false)
+    didSubmitGameOverScoreRef.current = false
     startGameMusic()
     setGameState("playing")
   }
 
   const handleShowLeaderboard = () => {
-    // Placeholder for leaderboard functionality
-    console.log("Show leaderboard")
+    setGameState("leaderboard")
   }
 
   const handleOpenHelp = () => {
@@ -111,6 +122,18 @@ export default function GatesOfErebuni() {
   }, [gameState, health])
 
   useEffect(() => {
+    if (gameState !== "gameover" || didSubmitGameOverScoreRef.current) return
+
+    didSubmitGameOverScoreRef.current = true
+    void submitScore({
+      username: portalProfile.username,
+      score: gatesSurvived,
+      wave: currentWave,
+      gatesSurvived,
+    })
+  }, [currentWave, gameState, gatesSurvived, portalProfile.username, submitScore])
+
+  useEffect(() => {
     return () => stopGameMusic()
   }, [])
 
@@ -119,8 +142,10 @@ export default function GatesOfErebuni() {
     const { profile, hp } = readPortalProfile()
     setPortalProfile(profile)
     if (profile.portal) {
+      setPlayerUsername(profile.username)
       setHealth(hp ?? 100)
       setGatesSurvived(0)
+      setCurrentWave(1)
       setActiveBlessing(null)
       setInteractionHint("")
       setHelpOpen(false)
@@ -148,6 +173,7 @@ export default function GatesOfErebuni() {
         <GameCanvas
           onPlayerHit={handlePlayerHit}
           onEnemyKilled={() => setGatesSurvived((s) => s + 1)}
+          onWaveChange={setCurrentWave}
           portalProfile={portalProfile}
           getCurrentHp={() => health}
           onGateSelected={(gate: GateType | null) => {
@@ -172,7 +198,7 @@ export default function GatesOfErebuni() {
           health={health}
           maxHealth={100}
           gatesSurvived={gatesSurvived}
-          username={portalProfile.portal ? portalProfile.username : undefined}
+          username={portalProfile.username}
           activeBlessing={activeBlessing}
           interactionHint={interactionHint}
           onShowHelp={handleOpenHelp}
@@ -182,11 +208,17 @@ export default function GatesOfErebuni() {
       {/* UI Overlays based on game state */}
       {gameState === "menu" && !portalProfile.portal && (
         <MainMenu
+          username={playerUsername}
+          onUsernameChange={setPlayerUsername}
           onStartGame={handleStartGame}
           onShowLeaderboard={handleShowLeaderboard}
           onShowHelp={handleOpenHelp}
           onShowStory={() => setStoryOpen(true)}
         />
+      )}
+
+      {gameState === "leaderboard" && !portalProfile.portal && (
+        <LeaderboardScreen onBack={() => setGameState("menu")} />
       )}
 
       {gameState === "gameover" && (

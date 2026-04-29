@@ -37,6 +37,7 @@ type Gate = {
 export function GameCanvas({
   onPlayerHit,
   onEnemyKilled,
+  onWaveChange,
   portalProfile,
   getCurrentHp,
   onGateSelected,
@@ -45,6 +46,7 @@ export function GameCanvas({
 }: {
   onPlayerHit?: (damage: number) => void
   onEnemyKilled?: () => void
+  onWaveChange?: (wave: number) => void
   portalProfile?: {
     portal: boolean
     username: string
@@ -1029,6 +1031,7 @@ export function GameCanvas({
     const startWave = (wave: number, gate: GateType | null) => {
       phase = { mode: "PLAYING_WAVE" }
       waveNumber = wave
+      onWaveChange?.(wave)
       pendingGate = gate
       activeModifier = gate
       setGatesVisible(false)
