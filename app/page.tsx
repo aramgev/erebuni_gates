@@ -51,26 +51,57 @@ export default function GatesOfErebuni() {
   const [helpOpen, setHelpOpen] = useState(false)
   const [storyOpen, setStoryOpen] = useState(false)
   const musicRef = useRef<HTMLAudioElement | null>(null)
+  const musicModeRef = useRef<"menu" | "game" | null>(null)
   const didSubmitGameOverScoreRef = useRef(false)
 
-  const startGameMusic = () => {
+  const playLoopingMusic = (src: string, volume: number, mode: "menu" | "game") => {
+    if (musicModeRef.current === mode && musicRef.current && musicRef.current.src.includes(src)) {
+      // Already on the right track; keep playing without restarting.
+      if (musicRef.current.paused) {
+        void musicRef.current.play().catch((error) => {
+          console.warn("Could not start background music", error)
+        })
+      }
+      return
+    }
+
     if (!musicRef.current) {
-      const music = new Audio("/ErebuniDefense.mp3")
+      const music = new Audio(src)
       music.loop = true
-      music.volume = 0.45
+      music.volume = volume
       musicRef.current = music
+    } else {
+      musicRef.current.pause()
+      musicRef.current.currentTime = 0
+      if (!musicRef.current.src.includes(src)) {
+        musicRef.current.src = src
+        musicRef.current.load()
+      }
+      musicRef.current.loop = true
+      musicRef.current.volume = volume
     }
 
     musicRef.current.currentTime = 0
     void musicRef.current.play().catch((error) => {
       console.warn("Could not start background music", error)
     })
+
+    musicModeRef.current = mode
+  }
+
+  const startMenuMusic = () => {
+    playLoopingMusic("/ErebuniDefenseIntro.mp3", 0.45, "menu")
+  }
+
+  const startGameMusic = () => {
+    playLoopingMusic("/ErebuniDefense.mp3", 0.45, "game")
   }
 
   const stopGameMusic = () => {
     if (!musicRef.current) return
     musicRef.current.pause()
     musicRef.current.currentTime = 0
+    musicModeRef.current = null
   }
 
   const handleStartGame = () => {
@@ -106,7 +137,8 @@ export default function GatesOfErebuni() {
   const handleReturnToMenu = () => {
     setHelpOpen(false)
     setStoryOpen(false)
-    stopGameMusic()
+    // Only switch music if we were in game mode.
+    if (musicModeRef.current === "game") startMenuMusic()
     setGameState("menu")
   }
 
@@ -120,6 +152,30 @@ export default function GatesOfErebuni() {
       setGameState("gameover")
     }
   }, [gameState, health])
+
+  // Start menu music after the first user interaction (autoplay policies).
+  useEffect(() => {
+    if (portalProfile.portal) return
+    if (gameState !== "menu" && gameState !== "leaderboard") return
+
+    const tryStart = () => startMenuMusic()
+    const onFirstInteraction = () => {
+      tryStart()
+      window.removeEventListener("pointerdown", onFirstInteraction)
+      window.removeEventListener("keydown", onFirstInteraction)
+    }
+
+    // Attempt immediately (works if the browser allows it), but also
+    // guarantee it will start on the first interaction.
+    tryStart()
+    window.addEventListener("pointerdown", onFirstInteraction, { once: true })
+    window.addEventListener("keydown", onFirstInteraction, { once: true })
+
+    return () => {
+      window.removeEventListener("pointerdown", onFirstInteraction)
+      window.removeEventListener("keydown", onFirstInteraction)
+    }
+  }, [gameState, portalProfile.portal])
 
   useEffect(() => {
     if (gameState !== "gameover" || didSubmitGameOverScoreRef.current) return
