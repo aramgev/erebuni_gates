@@ -96,45 +96,51 @@ export function StoryModal({ open, onClose }: StoryModalProps) {
   if (!open) return null
 
   return (
-    <div className="absolute inset-0 z-50 animate-in fade-in duration-300 bg-[#050507]/95 text-[#f4ead2]">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(201,147,55,0.16),transparent_38%)]" />
-      <Button
-        type="button"
-        onClick={onClose}
-        variant="outline"
-        size="icon"
-        className="absolute right-5 top-5 z-20 border-[#c99337]/60 bg-[#120d0c]/80 text-[#ffd98a] hover:bg-[#8e2f21]/40 hover:text-[#ffd98a]"
-        aria-label="Close story"
-      >
-        ×
-      </Button>
-
-      <div className="relative z-10 mx-auto flex h-full max-w-4xl flex-col px-5 py-8 md:px-10">
-        <header className="border-b border-[#c99337]/30 pb-5 text-center font-serif">
-          <p className="text-xs uppercase tracking-[0.35em] text-[#d25b3d]">
-            Gates of Erebuni
-          </p>
-          <h2 className="mt-2 text-4xl font-bold text-[#ffd98a] md:text-5xl">
-            The Story
-          </h2>
-        </header>
-
-        <div className="mt-6 flex-1 overflow-y-auto pr-2 font-serif">
-          <div className="space-y-10 pb-10">
-            {storySections.map((section) => (
-              <section
-                key={section.title}
-                className="border-l border-[#c99337]/35 pl-5"
-              >
-                <h3 className="mb-4 text-2xl font-bold text-[#ffd98a]">
-                  {section.title}
-                </h3>
-                <div className="whitespace-pre-line text-lg leading-9 text-[#eadfc7]">
-                  {section.body}
-                </div>
-              </section>
-            ))}
+    <div className="absolute inset-0 z-50 flex animate-in items-center justify-center bg-[#050507]/80 px-4 py-6 text-[#f4ead2] backdrop-blur-sm duration-300 fade-in">
+      <div className="relative max-h-[88vh] w-full max-w-3xl overflow-y-auto border border-[#c99337]/45 bg-[#0d0b0b]/95 p-5 shadow-[0_0_50px_rgba(201,147,55,0.2)] md:p-7">
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-[#c99337] to-transparent" />
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div className="font-serif">
+            <p className="text-xs font-semibold uppercase tracking-[0.32em] text-[#d25b3d]">
+              Gates of Erebuni
+            </p>
+            <h2 className="mt-1 text-3xl font-bold text-[#ffd98a] md:text-4xl">
+              The Story
+            </h2>
           </div>
+          <Button
+            type="button"
+            onClick={onClose}
+            variant="outline"
+            size="icon"
+            className="border-[#c99337]/50 bg-[#160f0d] text-[#ffd98a] hover:bg-[#8e2f21]/40 hover:text-[#ffd98a]"
+            aria-label="Close story"
+          >
+            ×
+          </Button>
+        </div>
+
+        <div className="space-y-8 font-serif text-sm leading-7 text-[#eadfc7] md:text-base">
+          {storySections.map((section) => (
+            <section key={section.title} className="border-l border-[#c99337]/35 pl-4">
+              <h3 className="mb-3 text-lg font-bold text-[#ffd98a] md:text-xl">
+                {section.title}
+              </h3>
+              <div className="whitespace-pre-line leading-8 md:leading-9">
+                {section.body}
+              </div>
+            </section>
+          ))}
+        </div>
+
+        <div className="mt-7 flex justify-end">
+          <Button
+            type="button"
+            onClick={onClose}
+            className="border border-[#ffd98a]/50 bg-[#c99337] px-7 font-bold uppercase tracking-[0.18em] text-[#140d08] hover:bg-[#ffd98a]"
+          >
+            Return
+          </Button>
         </div>
       </div>
     </div>
