@@ -1213,6 +1213,46 @@ export function GameCanvas({
     let lastInteractionHint = ""
     let lastGateDebugAtMs = 0
 
+    // Dynamic environment — night mode / rain from wave 10
+    const isNightMode = () => waveNumber >= 10
+    let nightTransition = 0 // 0 = day, 1 = full night
+    const nightTransitionSpeed = 0.003 // how fast day→night transitions
+
+    // Night mode references
+    const nightSceneFog = new THREE.Color(0x0a0e1a)
+    const daySceneFog = new THREE.Color(0x263049)
+    const nightBg = new THREE.Color(0x060810)
+    const dayBg = new THREE.Color(0x1a2237)
+
+    // Rain system
+    const rainGeo = new THREE.BufferGeometry()
+    const rainCount = 1800
+    const rainPositions = new Float32Array(rainCount * 3)
+    const rainVelocities = new Float32Array(rainCount)
+    for (let i = 0; i < rainCount; i++) {
+      rainPositions[i * 3] = (Math.random() - 0.5) * 120
+      rainPositions[i * 3 + 1] = Math.random() * 45
+      rainPositions[i * 3 + 2] = (Math.random() - 0.5) * 120 - 20
+      rainVelocities[i] = 0.4 + Math.random() * 0.5
+    }
+    rainGeo.setAttribute("position", new THREE.BufferAttribute(rainPositions, 3))
+    const rainMat = new THREE.PointsMaterial({
+      color: 0x8899bb,
+      size: 0.12,
+      transparent: true,
+      opacity: 0.35,
+      fog: true,
+      depthWrite: false,
+    })
+    const rainSystem = new THREE.Points(rainGeo, rainMat)
+    rainSystem.name = "rain-system"
+    rainSystem.visible = false
+    scene.add(rainSystem)
+
+    // Lightning flashes
+    let lightningFlash = 0
+    let nextLightningAt = performance.now() + 8000 + Math.random() * 12000
+
     const setInteractionHint = (hint: string) => {
       if (hint === lastInteractionHint) return
       lastInteractionHint = hint
@@ -1791,6 +1831,56 @@ export function GameCanvas({
           if (obj.position.x > 180) obj.position.x = -180
         }
       })
+
+      // Dynamic environment: day→night transition from wave 10
+      const targetNight = isNightMode() ? 1 : 0
+      if (targetNight > nightTransition) {
+        nightTransition = Math.min(1, nightTransition + nightTransitionSpeed)
+      } else if (targetNight < nightTransition) {
+        nightTransition = Math.max(0, nightTransition - nightTransitionSpeed * 0.5)
+      }
+
+      // Blend fog and background colors
+      const fogBlend = daySceneFog.clone().lerp(nightSceneFog, nightTransition)
+      scene.fog.color.copy(fogBlend)
+      const bgBlend = dayBg.clone().lerp(nightBg, nightTransition)
+      scene.background = bgBlend
+
+      // Dim lights at night
+      ambientLight.intensity = 0.48 * (1 - nightTransition * 0.55)
+      directionalLight.intensity = 1.15 * (1 - nightTransition * 0.65)
+      hemi.intensity = 0.45 * (1 - nightTransition * 0.5)
+
+      // Rain system
+      if (nightTransition > 0.15) {
+        rainSystem.visible = true
+        rainMat.opacity = Math.max(0, (nightTransition - 0.15) * 0.42)
+        const positions = rainGeo.attributes.position.array as Float32Array
+        for (let i = 0; i < rainCount; i++) {
+          positions[i * 3 + 1] -= rainVelocities[i] * dt * 55
+          positions[i * 3] -= dt * 3 // wind drift
+          if (positions[i * 3 + 1] < 0) {
+            positions[i * 3 + 1] = 40 + Math.random() * 5
+            positions[i * 3] = (Math.random() - 0.5) * 120 + camera.position.x
+            positions[i * 3 + 2] = (Math.random() - 0.5) * 120 + camera.position.z - 20
+          }
+        }
+        rainGeo.attributes.position.needsUpdate = true
+      } else {
+        rainSystem.visible = false
+      }
+
+      // Lightning flashes
+      if (nightTransition > 0.3 && now > nextLightningAt) {
+        lightningFlash = 1
+        nextLightningAt = now + 6000 + Math.random() * 15000
+      }
+      if (lightningFlash > 0) {
+        lightningFlash -= dt * 3.5
+        const flashIntensity = Math.max(0, lightningFlash)
+        directionalLight.intensity = 1.15 * (1 - nightTransition * 0.65) + flashIntensity * 2.5
+        ambientLight.intensity = 0.48 * (1 - nightTransition * 0.55) + flashIntensity * 0.8
+      }
 
       for (const gate of gates) {
         gate.mesh.lookAt(camera.position.x, gate.mesh.position.y, camera.position.z)

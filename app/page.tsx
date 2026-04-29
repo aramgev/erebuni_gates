@@ -53,6 +53,7 @@ export default function GatesOfErebuni() {
   const [storyOpen, setStoryOpen] = useState(false)
   const musicRef = useRef<HTMLAudioElement | null>(null)
   const musicModeRef = useRef<"menu" | "game" | null>(null)
+  const musicEndedRef = useRef(false)
   const didSubmitGameOverScoreRef = useRef(false)
 
   const playLoopingMusic = (src: string, volume: number, mode: "menu" | "game") => {
@@ -67,9 +68,20 @@ export default function GatesOfErebuni() {
 
     if (!musicRef.current) {
       const music = new Audio(src)
-      music.loop = true
+      music.loop = false
       music.volume = muted ? 0 : volume
       musicRef.current = music
+
+      music.addEventListener("ended", () => {
+        if (musicModeRef.current === "game" && musicRef.current?.src.includes("ErebuniDefense.mp3") && !musicRef.current.src.includes("ErebuniDefense2")) {
+          playLoopingMusic("/ErebuniDefense2.mp3", 0.45, "game")
+        } else if (musicModeRef.current === "game" && musicRef.current?.src.includes("ErebuniDefense2.mp3")) {
+          playLoopingMusic("/ErebuniDefense.mp3", 0.45, "game")
+        } else if (musicModeRef.current === "menu" && musicRef.current) {
+          musicRef.current.currentTime = 0
+          void musicRef.current.play().catch(() => {})
+        }
+      })
     } else {
       musicRef.current.pause()
       musicRef.current.currentTime = 0
@@ -77,7 +89,7 @@ export default function GatesOfErebuni() {
         musicRef.current.src = src
         musicRef.current.load()
       }
-      musicRef.current.loop = true
+      musicRef.current.loop = false
       musicRef.current.volume = muted ? 0 : volume
     }
 
