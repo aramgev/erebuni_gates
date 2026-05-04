@@ -42,6 +42,8 @@ export function GameCanvas({
   getCurrentHp,
   onGateSelected,
   onInteractionHintChange,
+  onPortalEnterRequest,
+  portalRedirectUrl,
   isPaused = false,
   muted = false,
 }: {
@@ -58,12 +60,16 @@ export function GameCanvas({
   getCurrentHp?: () => number
   onGateSelected?: (gate: GateType | null) => void
   onInteractionHintChange?: (hint: string) => void
+  onPortalEnterRequest?: (url: string) => void
+  portalRedirectUrl?: string | null
   isPaused?: boolean
   muted?: boolean
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const pausedRef = useRef(isPaused)
   const mutedRef = useRef(muted)
+  const portalCallbackRef = useRef(onPortalEnterRequest)
+  const portalRedirectUrlRef = useRef(portalRedirectUrl)
 
   useEffect(() => {
     pausedRef.current = isPaused
@@ -72,6 +78,14 @@ export function GameCanvas({
   useEffect(() => {
     mutedRef.current = muted
   }, [muted])
+
+  useEffect(() => {
+    portalCallbackRef.current = onPortalEnterRequest
+  }, [onPortalEnterRequest])
+
+  useEffect(() => {
+    portalRedirectUrlRef.current = portalRedirectUrl
+  }, [portalRedirectUrl])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -641,6 +655,7 @@ export function GameCanvas({
     let portalRedirectAtMs = 0
     let portalFade = 0
     let portalTargetUrl: string | null = null
+    let portalPromptShown = false
     // Prevent accidental portal triggers right at start (spawn jitter, initial touch, etc.)
     const portalArmedAtMs = performance.now() + 1200
     const portalFadePlane = new THREE.Mesh(
@@ -1752,10 +1767,10 @@ export function GameCanvas({
       right.copy(forward).cross(up).normalize()
 
       move.set(0, 0, 0)
-      if (keys.has("KeyW")) move.add(forward)
-      if (keys.has("KeyS")) move.sub(forward)
-      if (keys.has("KeyD")) move.add(right)
-      if (keys.has("KeyA")) move.sub(right)
+      if (keys.has("KeyW") || keys.has("ArrowUp")) move.add(forward)
+      if (keys.has("KeyS") || keys.has("ArrowDown")) move.sub(forward)
+      if (keys.has("KeyD") || keys.has("ArrowRight")) move.add(right)
+      if (keys.has("KeyA") || keys.has("ArrowLeft")) move.sub(right)
       // Mobile joystick movement (coarse pointer only)
       if (isCoarsePointer()) {
         // joyY: down is +1; forward is -Z, so subtract joyY
@@ -1773,9 +1788,6 @@ export function GameCanvas({
 
       camera.position.x = Math.max(-halfW, Math.min(halfW, nextX))
       camera.position.z = Math.max(platformZ - halfD, Math.min(platformZ + halfD, nextZ))
-
-      // Lock player to wall height (no gravity/jump for now)
-      camera.position.y = playerFloorY
 
       // Enemy updates (move toward wall; once reached, deal DOT)
       const playerPos = camera.position
@@ -1941,30 +1953,65 @@ export function GameCanvas({
 
       // Vibe Jam portal collision checks (very cheap).
       if (!portalRedirecting) {
-        if (now < portalArmedAtMs) {
-          // Not armed yet.
-        } else {
-        const p = camera.position
-        if (horizontalDistanceTo(p, exitPortal.position) <= portalTriggerRadius) {
-          const target = buildExitPortalUrl()
+        // Confirmed redirect from parent (dialog)
+        const confirmedUrl = portalRedirectUrlRef.current
+        if (confirmedUrl) {
           portalRedirecting = true
           portalEnterStartedAtMs = now
-          portalRedirectAtMs = now + (300 + Math.random() * 500)
+          portalRedirectAtMs = now + 500
           portalFade = 0
-          portalTargetUrl = target
+          portalTargetUrl = confirmedUrl
+          portalRedirectUrlRef.current = null
           setInteractionHint("Entering portal...")
-        }
-        if (returnPortal) {
-          const returnUrl = buildReturnPortalUrl()
-          if (returnUrl && horizontalDistanceTo(p, returnPortal.position) <= portalTriggerRadius) {
-            portalRedirecting = true
-            portalEnterStartedAtMs = now
-            portalRedirectAtMs = now + (250 + Math.random() * 450)
-            portalFade = 0
-            portalTargetUrl = returnUrl
-            setInteractionHint("Returning...")
+        } else if (now < portalArmedAtMs) {
+          // Not armed yet.
+        } else {
+          const p = camera.position
+          const inExitZone = horizontalDistanceTo(p, exitPortal.position) <= portalTriggerRadius
+          let inReturnZone = false
+          if (returnPortal) {
+            const returnUrl = buildReturnPortalUrl()
+            if (returnUrl) {
+              inReturnZone = horizontalDistanceTo(p, returnPortal.position) <= portalTriggerRadius
+            }
           }
-        }
+
+          // Reset prompt flag when player leaves all portal zones
+          if (!inExitZone && !inReturnZone) {
+            portalPromptShown = false
+          }
+
+          if (inExitZone && !portalPromptShown) {
+            portalPromptShown = true
+            const target = buildExitPortalUrl()
+            if (portalCallbackRef.current) {
+              portalCallbackRef.current(target)
+            } else {
+              portalRedirecting = true
+              portalEnterStartedAtMs = now
+              portalRedirectAtMs = now + (300 + Math.random() * 500)
+              portalFade = 0
+              portalTargetUrl = target
+              setInteractionHint("Entering portal...")
+            }
+          }
+
+          if (inReturnZone && !portalPromptShown) {
+            portalPromptShown = true
+            const returnUrl = buildReturnPortalUrl()
+            if (returnUrl) {
+              if (portalCallbackRef.current) {
+                portalCallbackRef.current(returnUrl)
+              } else {
+                portalRedirecting = true
+                portalEnterStartedAtMs = now
+                portalRedirectAtMs = now + (250 + Math.random() * 450)
+                portalFade = 0
+                portalTargetUrl = returnUrl
+                setInteractionHint("Returning...")
+              }
+            }
+          }
         }
       }
 
