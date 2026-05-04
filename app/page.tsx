@@ -51,6 +51,8 @@ export default function GatesOfErebuni() {
   const [interactionHint, setInteractionHint] = useState("")
   const [helpOpen, setHelpOpen] = useState(false)
   const [storyOpen, setStoryOpen] = useState(false)
+  const [pendingPortalUrl, setPendingPortalUrl] = useState<string | null>(null)
+  const [portalRedirectUrl, setPortalRedirectUrl] = useState<string | null>(null)
   const musicRef = useRef<HTMLAudioElement | null>(null)
   const musicModeRef = useRef<"menu" | "game" | null>(null)
   const musicEndedRef = useRef(false)
@@ -266,7 +268,9 @@ export default function GatesOfErebuni() {
             )
           }}
           onInteractionHintChange={setInteractionHint}
-          isPaused={helpOpen}
+          onPortalEnterRequest={(url) => setPendingPortalUrl(url)}
+          portalRedirectUrl={portalRedirectUrl}
+          isPaused={helpOpen || pendingPortalUrl !== null}
           muted={muted}
         />
       )}
@@ -319,6 +323,43 @@ export default function GatesOfErebuni() {
 
       <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
       <StoryModal open={storyOpen} onClose={() => setStoryOpen(false)} />
+
+      {/* Portal confirmation dialog */}
+      {pendingPortalUrl && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="mx-4 max-w-md rounded-2xl border border-amber-900/40 bg-gradient-to-b from-stone-900 to-stone-950 p-8 shadow-2xl">
+            <div className="text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-900/30">
+                <span className="text-2xl">🌀</span>
+              </div>
+              <h3 className="mb-2 text-xl font-bold text-amber-100">
+                Enter the Portal?
+              </h3>
+              <p className="mb-6 text-sm leading-relaxed text-stone-400">
+                You are about to leave the Gates of Erebuni and travel to another game.
+                Your progress here will be lost.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setPendingPortalUrl(null)}
+                  className="flex-1 rounded-lg border border-stone-700 bg-stone-800 px-5 py-2.5 text-sm font-semibold text-stone-300 transition-colors hover:bg-stone-700 hover:text-stone-100"
+                >
+                  Stay Here
+                </button>
+                <button
+                  onClick={() => {
+                    setPortalRedirectUrl(pendingPortalUrl)
+                    setPendingPortalUrl(null)
+                  }}
+                  className="flex-1 rounded-lg bg-gradient-to-r from-amber-700 to-amber-600 px-5 py-2.5 text-sm font-semibold text-amber-50 transition-colors hover:from-amber-600 hover:to-amber-500"
+                >
+                  Enter Portal
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
