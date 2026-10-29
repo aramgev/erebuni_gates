@@ -39,7 +39,7 @@ export function GameHUD({
   return (
     <div className="absolute inset-0 z-10 pointer-events-none">
       {/* Top bar */}
-      <div className="absolute top-0 left-0 right-0 flex items-start justify-between p-4 md:p-6">
+      <div className="absolute top-0 left-0 right-0 flex items-start justify-between bg-gradient-to-b from-black/80 via-black/40 to-transparent p-4 pb-10 md:p-6 md:pb-12 [&_.text-muted-foreground]:text-stone-300">
         {/* Health bar - Top left */}
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center gap-2">
@@ -68,7 +68,7 @@ export function GameHUD({
             />
           </div>
           <span className="text-xs text-muted-foreground tabular-nums">
-            {health} / {maxHealth}
+            {Math.ceil(health)} / {maxHealth}
           </span>
           {username && (
             <span className="text-xs text-muted-foreground tracking-wide">
@@ -88,8 +88,8 @@ export function GameHUD({
             </span>
             <div className="absolute inset-0 blur-lg bg-primary/20 -z-10" />
           </div>
-          <span className="text-xs text-muted-foreground">
-            {gatesSurvived} gates survived
+          <span className="text-[10px] text-muted-foreground">
+            defeated · {gatesSurvived} waves cleared
           </span>
         </div>
 
@@ -126,23 +126,18 @@ export function GameHUD({
             </button>
           </div>
           {activeBlessing ? (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-secondary/50 border border-border rounded-sm">
-              <span className="text-lg">{activeBlessing.icon}</span>
-              <span className="text-sm text-foreground tracking-wide">
+            <div className="flex max-w-[31vw] items-center gap-2 rounded-sm border border-border bg-secondary/50 px-2 py-1.5 md:max-w-none md:px-3">
+              <span className="text-sm md:text-lg">{activeBlessing.icon}</span>
+              <span className="text-[9px] leading-4 text-foreground tracking-wide md:text-sm">
                 {activeBlessing.name}
               </span>
             </div>
           ) : (
             <div className="px-3 py-1.5 bg-secondary/30 border border-border/50 rounded-sm">
-              <span className="text-sm text-muted-foreground">None</span>
+              <span className="text-xs text-muted-foreground">Defend Erebuni</span>
             </div>
           )}
         </div>
-      </div>
-
-      {/* Crosshair - Center */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-        <Crosshair className="w-6 h-6 text-primary/70" />
       </div>
 
       {/* Interaction hint - Bottom center */}
@@ -186,16 +181,6 @@ function HealthIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
       <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-    </svg>
-  )
-}
-
-function Crosshair({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className={className}>
-      {/* Simple rune-style crosshair */}
-      <circle cx="12" cy="12" r="2" fill="currentColor" />
-      <path d="M12 2v6M12 16v6M2 12h6M16 12h6" strokeLinecap="round" />
     </svg>
   )
 }

@@ -2,6 +2,11 @@
 
 import { useEffect, useRef } from "react"
 import * as THREE from "three"
+import { wavePlan, waveFormation, regionForWave, combatStats, streakReward, type ExpeditionCommand, type ExpeditionStatus, type UpgradeId, type WeaponMode } from "@/lib/expedition"
+import { buildWorldScenery, makeTerrainGeometry, makeGrassGeometry, terrainHeight } from "@/lib/world-scenery"
+import { createCrossbow } from "@/lib/crossbow"
+import { createFortressCannon } from "@/lib/fortress-cannon"
+import { pointerAim, assistedEnemy } from "@/lib/aim"
 
 type Enemy = {
   mesh: any
@@ -14,6 +19,10 @@ type Enemy = {
   baseY: number
   floatPhase: number
   breached: boolean
+  maxHealth: number
+  boss: boolean
+  healthBar: any
+  targetX: number
 }
 
 declare global {
@@ -46,7 +55,15 @@ export function GameCanvas({
   portalRedirectUrl,
   isPaused = false,
   muted = false,
+  command,
+  onStatus,
+  onHeal,
+  onControlChange,
 }: {
+  command?: ExpeditionCommand | null
+  onStatus?: (status: ExpeditionStatus) => void
+  onHeal?: (amount: number) => void
+  onControlChange?: (locked: boolean) => void
   onPlayerHit?: (damage: number) => void
   onEnemyKilled?: () => void
   onWaveChange?: (wave: number) => void
@@ -66,10 +83,15 @@ export function GameCanvas({
   muted?: boolean
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const reticleRef = useRef<SVGSVGElement | null>(null)
   const pausedRef = useRef(isPaused)
   const mutedRef = useRef(muted)
   const portalCallbackRef = useRef(onPortalEnterRequest)
   const portalRedirectUrlRef = useRef(portalRedirectUrl)
+  const liveRef = useRef({ onPlayerHit, onEnemyKilled, onWaveChange, getCurrentHp, onGateSelected, onInteractionHintChange, onStatus, onHeal, onControlChange })
+  liveRef.current = { onPlayerHit, onEnemyKilled, onWaveChange, getCurrentHp, onGateSelected, onInteractionHintChange, onStatus, onHeal, onControlChange }
+  const commandRef = useRef(command)
+  commandRef.current = command
 
   useEffect(() => {
     pausedRef.current = isPaused
@@ -91,21 +113,8 @@ export function GameCanvas({
     const canvas = canvasRef.current
     if (!canvas) return
 
-    type GameSound = "bow" | "hit" | "enemyDeath" | "waveStart" | "gateSelect"
+    type GameSound = "bow" | "hit" | "enemyDeath" | "waveStart" | "gateSelect" | "cannon"
     let audioContext: AudioContext | null = null
-
-    // Pointer-lock re-entry cooldown:
-    // Browsers can reject `requestPointerLock()` immediately after an exit with:
-    // "Pointer lock cannot be acquired immediately after the user has exited the lock."
-    // We track the last unlock time and ignore the first click for a short window.
-    let lastPointerUnlockAtMs = -Infinity
-    const pointerRelockCooldownMs = 900
-    const onPointerLockChange = () => {
-      if (document.pointerLockElement !== canvas) {
-        lastPointerUnlockAtMs = performance.now()
-      }
-    }
-    document.addEventListener("pointerlockchange", onPointerLockChange)
 
     const getAudioContext = () => {
       const AudioContextCtor = window.AudioContext || window.webkitAudioContext
@@ -142,6 +151,11 @@ export function GameCanvas({
       if (mutedRef.current) return
       const ctx = getAudioContext()
       if (!ctx) return
+      if (sound === "cannon") {
+        playTone(ctx, 65, 0.65, "sawtooth", 0.13)
+        playTone(ctx, 38, 0.8, "triangle", 0.15, 0.03)
+        return
+      }
 
       if (sound === "bow") {
         playTone(ctx, 180, 0.07, "triangle", 0.08)
@@ -216,14 +230,28 @@ export function GameCanvas({
       alpha: true,
     })
     renderer.shadowMap.enabled = false
+    renderer.shadowMap.type = THREE.PCFShadowMap
+    renderer.shadowMap.autoUpdate = false
     renderer.outputColorSpace = THREE.SRGBColorSpace
+    renderer.toneMapping = THREE.ACESFilmicToneMapping
+    renderer.toneMappingExposure = 1.2
+    scene.add(camera)
+    const { crossbow: bow, updatePose, setWeapon: setWeaponVisual } = createCrossbow()
+    camera.add(bow)
 
     const ambientLight = new THREE.AmbientLight(0xffead0, 0.48)
     scene.add(ambientLight)
 
     // Warm sunrise/sunset light from over the battlefield.
     const directionalLight = new THREE.DirectionalLight(0xffb36f, 1.15)
-    directionalLight.position.set(-28, 30, -42)
+    directionalLight.position.set(-45, 70, -65)
+    directionalLight.castShadow = renderer.shadowMap.enabled
+    directionalLight.shadow.mapSize.set(1024, 1024)
+    Object.assign(directionalLight.shadow.camera, { left: -85, right: 85, top: 85, bottom: -85, near: 1, far: 220 })
+    directionalLight.shadow.normalBias = 0.08
+    directionalLight.shadow.bias = -0.0003
+    directionalLight.target.position.set(0, 0, -40)
+    scene.add(directionalLight.target)
     scene.add(directionalLight)
 
     const hemi = new THREE.HemisphereLight(0xffd5a2, 0x211711, 0.45)
@@ -258,12 +286,6 @@ export function GameCanvas({
       color: 0xd2a33f,
       side: THREE.DoubleSide,
     })
-    const mountainSnowMat = new THREE.MeshBasicMaterial({
-      color: 0xf0eadc,
-      fog: false,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    })
     const basaltMat = new THREE.MeshStandardMaterial({
       color: 0x2a2520,
       roughness: 1,
@@ -278,6 +300,8 @@ export function GameCanvas({
       color: 0x425f3d,
       roughness: 1,
       metalness: 0,
+      vertexColors: true,
+      flatShading: true,
     })
     const distantGrassMat = new THREE.MeshStandardMaterial({
       color: 0x31472f,
@@ -305,12 +329,12 @@ export function GameCanvas({
 
     // Ground plane below (outside battlefield)
     const outsideGround = new THREE.Mesh(
-      new THREE.PlaneGeometry(400, 400, 1, 1),
+      makeTerrainGeometry(),
       grassGroundMat,
     )
     outsideGround.name = "outside-ground"
-    outsideGround.rotation.x = -Math.PI / 2
     outsideGround.position.set(0, 0, -100)
+    outsideGround.receiveShadow = true
     scene.add(outsideGround)
 
     const distantGround = new THREE.Mesh(
@@ -331,16 +355,19 @@ export function GameCanvas({
     approachPath.position.set(0, 0.03, -70)
     scene.add(approachPath)
 
-    const grassBladeGeo = new THREE.PlaneGeometry(0.18, 1.15, 1, 1)
-    grassBladeGeo.translate(0, 0.575, 0)
+    const grassBladeGeo = makeGrassGeometry()
+    const windUniform = { value: 0 }
     const grassBladeMat = new THREE.MeshStandardMaterial({
-      color: 0x5f8f46,
+      color: 0xa3b581,
       roughness: 0.95,
       metalness: 0,
       side: THREE.DoubleSide,
-      vertexColors: true,
     })
-    const grassCount = 950
+    grassBladeMat.onBeforeCompile = (shader: any) => {
+      shader.uniforms.windTime = windUniform
+      shader.vertexShader = `uniform float windTime;\n${shader.vertexShader}`.replace("#include <begin_vertex>", "#include <begin_vertex>\ntransformed.x += sin(windTime + instanceMatrix[3].x * 0.4 + instanceMatrix[3].z * 0.2) * 0.16 * position.y * position.y;")
+    }
+    const grassCount = 2200
     const grassBlades = new THREE.InstancedMesh(grassBladeGeo, grassBladeMat, grassCount)
     grassBlades.name = "outside-grass-blades"
     grassBlades.frustumCulled = false
@@ -364,13 +391,13 @@ export function GameCanvas({
       const height = 0.55 + seededRandom() * 1.05
       const width = 0.5 + seededRandom() * 0.9
       const lean = (seededRandom() - 0.5) * 0.28
-      grassPosition.set(x, 0.025, z)
+      grassPosition.set(x, terrainHeight(x, z) + 0.025, z)
       grassEuler.set(lean, seededRandom() * Math.PI * 2, (seededRandom() - 0.5) * 0.18)
       grassQuaternion.setFromEuler(grassEuler)
       grassScale.set(width, height, width)
       grassMatrix.compose(grassPosition, grassQuaternion, grassScale)
       grassBlades.setMatrixAt(i, grassMatrix)
-      grassColor.setHSL(0.26 + seededRandom() * 0.06, 0.35 + seededRandom() * 0.18, 0.25 + seededRandom() * 0.16)
+      grassColor.setHSL(0.2 + seededRandom() * 0.08, 0.25 + seededRandom() * 0.2, 0.42 + seededRandom() * 0.16)
       grassBlades.setColorAt(i, grassColor)
     }
     grassBlades.instanceMatrix.needsUpdate = true
@@ -391,91 +418,7 @@ export function GameCanvas({
       scene.add(rock)
     }
 
-    const makeMountainShape = (points: Array<[number, number]>) => {
-      const shape = new THREE.Shape()
-      shape.moveTo(points[0][0], points[0][1])
-      for (let i = 1; i < points.length; i++) shape.lineTo(points[i][0], points[i][1])
-      shape.lineTo(points[0][0], points[0][1])
-      return new THREE.ShapeGeometry(shape)
-    }
-
-    const mountainMat = new THREE.MeshBasicMaterial({
-      color: 0x384050,
-      fog: false,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    })
-    const mountainShadowMat = new THREE.MeshBasicMaterial({
-      color: 0x262c3a,
-      fog: false,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    })
-
-    const araratGroup = new THREE.Group()
-    araratGroup.name = "distant-mount-ararat"
-    araratGroup.position.set(0, 2.3, -190)
-
-    // Smaller mountain (Sis) on the LEFT
-    const lesserArarat = new THREE.Mesh(
-      makeMountainShape([
-        [-72, 0],
-        [-36, 6],
-        [-10, 31],
-        [18, 5],
-        [44, 0],
-      ]),
-      mountainShadowMat,
-    )
-    lesserArarat.name = "lesser-ararat-cone"
-    lesserArarat.position.z = -0.01
-    araratGroup.add(lesserArarat)
-
-    const lesserSnow = new THREE.Mesh(
-      makeMountainShape([
-        [-20, 20],
-        [-10, 31],
-        [2, 19],
-        [-4, 21],
-        [-11, 20],
-      ]),
-      mountainSnowMat,
-    )
-    lesserSnow.name = "lesser-ararat-snow-cap"
-    lesserSnow.position.z = 0.03
-    araratGroup.add(lesserSnow)
-
-    // Bigger mountain (Masis) on the RIGHT
-    const greaterArarat = new THREE.Mesh(
-      makeMountainShape([
-        [-52, 0],
-        [-6, 8],
-        [32, 52],
-        [68, 9],
-        [116, 0],
-      ]),
-      mountainMat,
-    )
-    greaterArarat.name = "greater-ararat-cone"
-    greaterArarat.position.z = 0.01
-    araratGroup.add(greaterArarat)
-
-    const greaterSnow = new THREE.Mesh(
-      makeMountainShape([
-        [18, 31],
-        [32, 52],
-        [48, 32],
-        [42, 36],
-        [35, 34],
-        [27, 38],
-      ]),
-      mountainSnowMat,
-    )
-    greaterSnow.name = "greater-ararat-snow-cap"
-    greaterSnow.position.z = 0.02
-    araratGroup.add(greaterSnow)
-
-    scene.add(araratGroup)
+    const worldScenery = buildWorldScenery(scene, seededRandom)
 
     // Distant clouds — high up, drift slowly
     const cloudMat = new THREE.MeshBasicMaterial({ color: 0x3a4560, transparent: true, opacity: 0.12, fog: false, depthWrite: false })
@@ -528,7 +471,7 @@ export function GameCanvas({
         seededRandom() > 0.5 ? bushMat : bushMatDark,
       )
       bush.name = `bush-${i}`
-      bush.position.set(x, 0.3, z)
+      bush.position.set(x, terrainHeight(x, z) + 0.3, z)
       bush.scale.y = 0.55
       scene.add(bush)
     }
@@ -561,7 +504,7 @@ export function GameCanvas({
         treeGroup.add(f2)
       }
 
-      treeGroup.position.set(x, 0, z)
+      treeGroup.position.set(x, terrainHeight(x, z), z)
       scene.add(treeGroup)
     }
 
@@ -575,9 +518,13 @@ export function GameCanvas({
     const playerHeightY = platformTopY + eyeHeightAbovePlatform
     // Spawn a bit closer to the front wall so the exit portal (near the rear)
     // can't be triggered immediately at game start.
-    const spawnZ = 4.4
+    const spawnZ = 1.6
     camera.position.set(0, playerHeightY, spawnZ)
-    camera.lookAt(0, 8, -45)
+    camera.lookAt(0, 1.5, -56)
+
+    const fortressCannon = createFortressCannon()
+    fortressCannon.cannon.position.set(-3.8, platformTopY, 0.6)
+    scene.add(fortressCannon.cannon)
 
     // Vibe Jam portals (native implementation; no external script required).
     // - Exit portal always exists and sends players to vibej.am portal webring.
@@ -657,7 +604,7 @@ export function GameCanvas({
     let portalTargetUrl: string | null = null
     let portalPromptShown = false
     // Prevent accidental portal triggers right at start (spawn jitter, initial touch, etc.)
-    const portalArmedAtMs = performance.now() + 1200
+    const portalArmedAtMs = 1200
     const portalFadePlane = new THREE.Mesh(
       new THREE.PlaneGeometry(2, 2),
       new THREE.MeshBasicMaterial({
@@ -703,7 +650,7 @@ export function GameCanvas({
       params.set("username", username)
       const color = (portalProfile?.color || "").trim()
       if (color) params.set("color", color)
-      const hp = Math.max(1, Math.min(100, Math.round(getCurrentHp?.() ?? 100)))
+      const hp = Math.max(1, Math.min(100, Math.round(liveRef.current.getCurrentHp?.() ?? 100)))
       params.set("hp", String(hp))
       // Keep their ref chain: when returning, set ref to this game.
       params.set("ref", window.location.hostname)
@@ -960,6 +907,56 @@ export function GameCanvas({
     rightReturnWall.position.set(platformWidth / 2 + 1.1, (platformHeight - 0.5) / 2, platformZ + 0.5)
     scene.add(rightReturnWall)
 
+    // Regional landmarks keep the central approach readable for aiming.
+    const regionDecor = Array.from({ length: 4 }, (_, region) => {
+      const group = new THREE.Group()
+      group.visible = region === 0
+      group.name = `expedition-region-${region}`
+      const color = [0xcaa575, 0xff6633, 0x76e8db, 0x9c8bff][region]
+      const stone = new THREE.MeshStandardMaterial({ color: region === 1 ? 0x302421 : 0x4d5260, roughness: 0.85 })
+      const luminous = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.7, roughness: 0.3 })
+      for (let i = 0; i < 12; i++) {
+        const x = (i % 2 ? 1 : -1) * (22 + seededRandom() * 18)
+        const z = -18 - Math.floor(i / 2) * 14
+        const height = 4 + seededRandom() * 7
+        const base = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 2.3, 1, 6), stone)
+        base.position.set(x, 0.5, z)
+        group.add(base)
+        const landmark = new THREE.Mesh(region === 2 ? new THREE.OctahedronGeometry(2, 0) : new THREE.CylinderGeometry(region === 1 ? 0.15 : 0.9, 1.2, height, region === 3 ? 6 : 4), region === 2 ? luminous : stone)
+        landmark.position.set(x, height / 2 + 1, z)
+        if (region === 2) { landmark.scale.y = 2.5; landmark.rotation.z = (seededRandom() - 0.5) * 0.5 }
+        group.add(landmark)
+        const crown = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.12, 5, 16), luminous)
+        crown.rotation.x = Math.PI / 2
+        crown.position.set(x, height + 0.5, z)
+        group.add(crown)
+      }
+      scene.add(group)
+      return group
+    })
+    const moteGeometry = new THREE.BufferGeometry()
+    const motePositions = new Float32Array(160 * 3)
+    for (let i = 0; i < 160; i++) {
+      motePositions[i * 3] = (seededRandom() - 0.5) * 80
+      motePositions[i * 3 + 1] = seededRandom() * 22
+      motePositions[i * 3 + 2] = -seededRandom() * 85
+    }
+    moteGeometry.setAttribute("position", new THREE.BufferAttribute(motePositions, 3))
+    const moteMaterial = new THREE.PointsMaterial({ color: 0xffd99a, size: 0.13, transparent: true, opacity: 0.65, depthWrite: false })
+    const motes = new THREE.Points(moteGeometry, moteMaterial)
+    scene.add(motes)
+    for (const x of [-15, -7, 7, 15]) {
+      const brazier = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.2, 1.4, 6), darkStoneMat)
+      brazier.position.set(x, platformTopY + 0.7, 0.9)
+      scene.add(brazier)
+      const flame = new THREE.Mesh(new THREE.OctahedronGeometry(0.38), new THREE.MeshBasicMaterial({ color: 0xffb95a }))
+      flame.position.set(x, platformTopY + 1.65, 0.9)
+      flame.scale.y = 1.8
+      scene.add(flame)
+      const light = new THREE.PointLight(0xff9d45, 5, 9)
+      light.position.copy(flame.position)
+      scene.add(light)
+    }
     const textureLoader = new THREE.TextureLoader()
 
     // Gates (textured planes + additive glow)
@@ -1089,7 +1086,6 @@ export function GameCanvas({
           texture.colorSpace = THREE.SRGBColorSpace
           texture.minFilter = THREE.LinearFilter
           texture.magFilter = THREE.LinearFilter
-          texture.needsUpdate = true
           return { kind, path, texture }
         }),
     )
@@ -1103,6 +1099,7 @@ export function GameCanvas({
       breachDamage: number,
       health: number,
       kind?: EnemyKind,
+      boss = false,
     ) => {
       const chosenKind = kind ?? enemyCatalog[Math.floor(Math.random() * enemyCatalog.length)].kind
       const kindTextures = enemyTexturePaths[chosenKind]
@@ -1129,7 +1126,9 @@ export function GameCanvas({
       sprite.position.set(x, 1.5, z)
 
       const kindScale = chosenKind === "stone-golem" ? 1.4 : chosenKind === "spirit" ? 0.85 : 1
-      sprite.scale.set(3 * kindScale, 3 * kindScale, 1)
+      const readabilityScale = waveNumber <= 2 ? 1.2 : 1
+      sprite.scale.set(3 * kindScale * readabilityScale, 3 * kindScale * readabilityScale, 1)
+      if (boss) { sprite.scale.multiplyScalar(2.1); material.color.set(0xffb46b) }
       sprite.castShadow = false
       sprite.receiveShadow = false
       scene.add(sprite)
@@ -1138,15 +1137,24 @@ export function GameCanvas({
       const kindHealthMult = chosenKind === "stone-golem" ? 2 : chosenKind === "spirit" ? 0.5 : 1
       const kindDamageMult = chosenKind === "stone-golem" ? 2 : chosenKind === "spirit" ? 0.75 : 1
 
+      const maxHealth = boss ? health : health * kindHealthMult
+      const healthBar = new THREE.Sprite(new THREE.SpriteMaterial({ color: boss ? 0xff9955 : 0x86e6cc, depthTest: false }))
+      healthBar.scale.set(2.4, 0.12, 1)
+      healthBar.visible = boss
+      scene.add(healthBar)
       enemies.push({
+        maxHealth,
+        boss,
+        healthBar,
+        targetX: Math.max(-17, Math.min(17, x * 0.55)),
         mesh: sprite,
         kind: chosenKind,
         speed: speed * kindSpeedMult,
         breachDamage: breachDamage * kindDamageMult,
-        health: health * kindHealthMult,
+        health: maxHealth,
         radius: 0.9 * kindScale,
         lastDamageAtMs: 0,
-        baseY: 1.5,
+        baseY: boss ? 3.8 : 1.5 * readabilityScale,
         floatPhase: Math.random() * Math.PI * 2,
         breached: false,
       })
@@ -1158,11 +1166,19 @@ export function GameCanvas({
       const [enemy] = enemies.splice(idx, 1)
       const pos = enemy.mesh.position.clone()
       scene.remove(enemy.mesh)
+      scene.remove(enemy.healthBar)
+      enemy.healthBar.material.dispose()
       playSound("enemyDeath")
 
       const mat = enemy.mesh.material
       if (mat?.dispose) mat.dispose()
-      onEnemyKilled?.()
+      liveRef.current.onEnemyKilled?.()
+      if (!resolvingCannon) charge = Math.min(100, charge + (enemy.boss ? 35 : 10))
+      if (enemy.boss) {
+        liveRef.current.onHeal?.(15)
+        charge = Math.min(100, charge + 40)
+        notify("Guardian bounty", "+15 vitality · +40 cannon loading progress")
+      }
 
       spawnDeathParticles(pos, enemy.kind)
 
@@ -1176,11 +1192,9 @@ export function GameCanvas({
     const spawnDeathParticles = (position: typeof camera.position, kind: EnemyKind) => {
       const particleCount = kind === "stone-golem" ? 12 : 8
       const color = kind === "spirit" ? 0x8866ff : kind === "stone-golem" ? 0x888888 : 0xffd98a
-      const particleGeo = new THREE.SphereGeometry(0.08, 4, 4)
-      const particleMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 })
 
       for (let i = 0; i < particleCount; i++) {
-        const particle = new THREE.Mesh(particleGeo, particleMat.clone())
+        const particle = new THREE.Mesh(new THREE.SphereGeometry(0.08, 4, 4), new THREE.MeshBasicMaterial({ color, transparent: true }))
         particle.position.copy(position)
         scene.add(particle)
 
@@ -1190,15 +1204,17 @@ export function GameCanvas({
           (Math.random() - 0.5) * 4,
         )
         const lifetime = 600 + Math.random() * 400
+        const born = gameTime
+        const origin = position.clone()
 
         effects.push({
           obj: particle,
-          expiresAtMs: performance.now() + lifetime,
+          expiresAtMs: born + lifetime,
           update: (now: number) => {
-            const elapsed = now - (performance.now() - lifetime + lifetime)
+            const elapsed = now - born
             const t = Math.min(1, elapsed / lifetime)
-            particle.position.add(velocity.clone().multiplyScalar(0.016))
-            velocity.y -= 0.08
+            particle.position.copy(origin).addScaledVector(velocity, elapsed / 1000)
+            particle.position.y -= 4 * Math.pow(elapsed / 1000, 2)
             particle.material.opacity = 1 - t
             particle.scale.setScalar(1 - t * 0.5)
           },
@@ -1206,27 +1222,75 @@ export function GameCanvas({
       }
     }
 
-    const damageEnemy = (enemy: Enemy, damage: number) => {
+    const damageEnemy = (enemy: Enemy, damage: number, ignoreArmor = false) => {
+      // The Basalt Warden alternates between armored and exposed phases.
+      if (!ignoreArmor && enemy.boss && waveNumber === 3 && Math.floor((gameTime - waveStartedAt) / 4000) % 2 === 0) damage *= 0.45
       enemy.health -= damage
-      console.log("[enemy damaged]", enemy.mesh.name, "health:", enemy.health)
+      hitUntil = gameTime + 160
       if (enemy.health <= 0) {
         destroyEnemy(enemy.mesh)
       }
     }
 
     const clearEnemies = () => {
-      for (const e of enemies) scene.remove(e.mesh)
+      for (const e of enemies) { scene.remove(e.mesh, e.healthBar); e.mesh.material.dispose(); e.healthBar.material.dispose() }
       enemies.length = 0
     }
 
-    type Phase = { mode: "PLAYING_WAVE" } | { mode: "GATE_SELECTION" }
+    type Phase = { mode: "PLAYING_WAVE" } | { mode: "WAVE_CLEAR"; remainingMs: number } | { mode: "GATE_SELECTION" }
     let phase: Phase = { mode: "PLAYING_WAVE" }
     let waveNumber = 1
-    let pendingGate: GateType | null = null
     let activeModifier: GateType | null = null
+    let gameTime = 0
+    let charge = 40, combo = 0, bestCombo = 0
+    let shots = 0, hitCount = 0, hitUntil = 0, hurtUntil = 0
+    let arrowDamage = 2, shotInterval = 140, cannonDamage = 8, armor = 1, focus = 1, relics = 0
+    let waveStartedAt = 0, reinforcementsAt = 0, reinforcementCount = 0
+    let waveGraceUntil = 0, resetWaveView = true
+    let resolvingCannon = false
+    let weapon: WeaponMode = "crossbow", arsenalUnlocked = false, overdriveUntil = 0
+    let cannonMounted = false, cannonExitAt = 0, cannonFiredAt = -Infinity
+    const cannonReturnPosition = camera.position.clone()
+    let reward: ExpeditionStatus["reward"] = null, rewardUntil = 0, rewardId = 0
+    const pendingShells: { point: typeof camera.position; landsAt: number; damage: number }[] = []
+    const stats = () => combatStats(arrowDamage, shotInterval, weapon, arsenalUnlocked, gameTime < overdriveUntil)
+    const notify = (title: string, description: string) => {
+      reward = { id: ++rewardId, title, description }
+      rewardUntil = gameTime + 3500
+    }
+    const awardHit = () => {
+      combo++
+      bestCombo = Math.max(bestCombo, combo)
+      const bonus = streakReward(combo)
+      charge = Math.min(100, charge + 5 * focus + bonus.charge + (bonus.heal ? 30 : 0))
+      if (bonus.heal) liveRef.current.onHeal?.(bonus.heal)
+      if (bonus.overdrive) overdriveUntil = gameTime + 8000
+      if (bonus.overdrive) notify(`${combo} hits · Overdrive!`, "8 seconds: faster shots +25% damage · +10 vitality · +50 cannon progress")
+      else if (bonus.heal) notify(`${combo} hits · Warrior's gift`, "+10 vitality · +50 cannon loading progress")
+      else if (bonus.charge) notify(`${combo} hits · Precision bonus`, "+20 cannon loading progress")
+    }
+    let lastShotAt = -Infinity, firing = false, waveTotal = 0, lastStatusAt = -Infinity, processedCommand = -1
+    const publishStatus = () => {
+      const boss = enemies.find((enemy) => enemy.boss)
+      liveRef.current.onStatus?.({ wave: waveNumber, cleared: phase.mode !== "PLAYING_WAVE", selectionReady: phase.mode === "GATE_SELECTION", remaining: enemies.length, total: waveTotal, charge: Math.floor(charge), combo, bestCombo, shots, hits: hitCount, bossHealth: boss?.health ?? 0, bossMaxHealth: boss?.maxHealth ?? 0, hit: gameTime < hitUntil, hurt: gameTime < hurtUntil, damage: stats().damage, relics, weapon, arsenalUnlocked, cannonMounted, overdriveSeconds: Math.max(0, Math.ceil((overdriveUntil - gameTime) / 1000)), reward: gameTime < rewardUntil ? reward : null })
+    }
+    const equipWeapon = (next: WeaponMode) => {
+      if (pausedRef.current || document.hidden || !arsenalUnlocked || cannonMounted) return
+      weapon = next
+      setWeaponVisual(next)
+      publishStatus()
+    }
+    const applyUpgrade = (upgrade: UpgradeId) => {
+      relics++
+      if (upgrade === "power") arrowDamage += 0.7
+      if (upgrade === "haste") shotInterval = Math.max(70, shotInterval * 0.88)
+      if (upgrade === "nova") { cannonDamage += 3; charge = 100 }
+      if (upgrade === "repair") liveRef.current.onHeal?.(35)
+      if (upgrade === "ward") armor *= 0.88
+      if (upgrade === "focus") focus += 0.4
+    }
     const interactionDistance = 7.5
     let lastInteractionHint = ""
-    let lastGateDebugAtMs = 0
 
     // Dynamic environment — night mode / rain from wave 10
     const isNightMode = () => waveNumber >= 10
@@ -1266,12 +1330,12 @@ export function GameCanvas({
 
     // Lightning flashes
     let lightningFlash = 0
-    let nextLightningAt = performance.now() + 8000 + Math.random() * 12000
+    let nextLightningAt = 8000 + Math.random() * 12000
 
     const setInteractionHint = (hint: string) => {
       if (hint === lastInteractionHint) return
       lastInteractionHint = hint
-      onInteractionHintChange?.(hint)
+      liveRef.current.onInteractionHintChange?.(hint)
     }
 
     const getNearestGate = () => {
@@ -1290,107 +1354,69 @@ export function GameCanvas({
     }
 
     const completeWave = () => {
-      phase = { mode: "GATE_SELECTION" }
+      phase = { mode: "WAVE_CLEAR", remainingMs: 3000 }
+      firing = false
+      leaveCannon()
+      pendingShells.length = 0
+      if (document.pointerLockElement) document.exitPointerLock()
       activeModifier = null
-      setGatesVisible(true)
-      onGateSelected?.(null)
-      console.log("wave complete")
-      console.log("gate selection active")
-      console.log("current gamePhase", phase.mode)
+      setGatesVisible(false)
+      liveRef.current.onGateSelected?.(null)
+      publishStatus()
     }
 
     const startWave = (wave: number, gate: GateType | null) => {
       phase = { mode: "PLAYING_WAVE" }
       waveNumber = wave
-      onWaveChange?.(wave)
-      pendingGate = gate
+      pendingShells.length = 0
+      if (wave >= 10) {
+        if (!arsenalUnlocked) {
+          arsenalUnlocked = true
+          weapon = "repeater"
+          setWeaponVisual(weapon)
+          charge = 100
+          notify("Storm arsenal unlocked", "Storm repeater equipped · 1/2 to switch · Cannon fully loaded")
+        } else charge = Math.min(100, charge + 25)
+      }
+      waveStartedAt = gameTime
+      reinforcementsAt = gameTime + 14000
+      reinforcementCount = 0
+      liveRef.current.onWaveChange?.(wave)
       activeModifier = gate
       setGatesVisible(false)
       setInteractionHint("")
       clearEnemies()
 
-      const baseEnemyCount = 5 + (wave - 1) * 2
-      const baseEnemySpeed = 1.5 + (wave - 1) * 0.22
-      const baseBreachDamage = 5 + (wave - 1) * 1.25
-      const baseEnemyHealth = 1 + Math.floor((wave - 1) / 4)
-      const enemyCount =
-        gate === "fire"
-          ? Math.max(3, baseEnemyCount - 2)
-          : gate === "shadow"
-            ? baseEnemyCount + 3
-            : baseEnemyCount
-      const enemySpeed =
-        gate === "fire"
-          ? baseEnemySpeed * 1.28
-          : gate === "storm"
-            ? baseEnemySpeed * 0.74
-            : baseEnemySpeed
-      const breachDamage =
-        gate === "fire" ? baseBreachDamage * 1.35 : baseBreachDamage
-      const enemyHealth =
-        gate === "shadow" ? Math.max(0.65, baseEnemyHealth * 0.65) : baseEnemyHealth
-      const spreadBonus = gate === "storm" ? 12 : 0
-      const xLeft = -platformWidth / 2 - 12 - spreadBonus
-      const xRight = platformWidth / 2 + 12 + spreadBonus
-      const zStart = platformZ - 90
-
-      for (let i = 0; i < enemyCount; i++) {
-        const t = enemyCount === 1 ? 0.5 : i / (enemyCount - 1)
-        const row = Math.floor(i / 5)
-        const x = xLeft + t * (xRight - xLeft)
-        const z = zStart - (i % 2) * 8 - row * 7
-        spawnEnemy(`wave-${wave}-enemy-${i + 1}`, x, z, enemySpeed, breachDamage, enemyHealth)
+      const plan = wavePlan(wave, gate)
+      waveGraceUntil = gameTime + plan.graceSeconds * 1000
+      resetWaveView = true
+      const region = regionForWave(wave)
+      daySceneFog.set(region.fog)
+      dayBg.set(region.sky)
+      grassGroundMat.color.set(region.ground)
+      grassBladeMat.color.set(region.ground)
+      grassBladeMat.color.lerp(new THREE.Color(0xffffff), 0.35)
+      worldScenery.setRegion(Math.min(3, Math.floor((wave - 1) / 3)))
+      renderer.shadowMap.needsUpdate = true
+      moteMaterial.color.set(region.color)
+      const colors = skyGeo.attributes.color
+      const horizon = new THREE.Color(region.sky).lerp(new THREE.Color(0xffcf94), 0.3)
+      const zenith = new THREE.Color(region.sky).multiplyScalar(0.22)
+      for (let i = 0; i < skyPos.count; i++) {
+        skyTmp.copy(horizon).lerp(zenith, Math.max(0, Math.min(1, skyPos.getY(i) / 300)))
+        colors.setXYZ(i, skyTmp.r, skyTmp.g, skyTmp.b)
       }
-
-      console.log(`wave started: ${wave}`, "modifier:", activeModifier ?? "none")
-      console.log("current gamePhase", phase.mode)
-      playSound("waveStart")
-      spawnWaveAnnouncement(wave, gate)
-    }
-
-    const spawnWaveAnnouncement = (wave: number, gate: GateType | null) => {
-      const canvas = document.createElement("canvas")
-      canvas.width = 512
-      canvas.height = 128
-      const ctx = canvas.getContext("2d")!
-      ctx.fillStyle = "rgba(0,0,0,0)"
-      ctx.fillRect(0, 0, 512, 128)
-      ctx.font = "bold 56px Georgia, serif"
-      ctx.textAlign = "center"
-      ctx.textBaseline = "middle"
-      ctx.fillStyle = "#d4a853"
-      ctx.fillText(`Wave ${wave}`, 256, 50)
-      if (gate) {
-        ctx.font = "28px Georgia, serif"
-        ctx.fillStyle = "#a08040"
-        const gateLabels: Record<GateType, string> = { fire: "Fire Trial", shadow: "Shadow Trial", storm: "Storm Trial" }
-        ctx.fillText(gateLabels[gate], 256, 95)
-      }
-
-      const texture = new THREE.CanvasTexture(canvas)
-      texture.colorSpace = THREE.SRGBColorSpace
-      const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 1, depthWrite: false, fog: false })
-      const sprite = new THREE.Sprite(spriteMat)
-      sprite.scale.set(8, 2, 1)
-      sprite.position.set(camera.position.x, camera.position.y + 2.5, camera.position.z - 6)
-      scene.add(sprite)
-
-      const startTime = performance.now()
-      const duration = 2500
-      effects.push({
-        obj: sprite,
-        expiresAtMs: startTime + duration,
-        update: (now: number) => {
-          const elapsed = now - startTime
-          const t = elapsed / duration
-          if (t < 0.15) {
-            sprite.material.opacity = t / 0.15
-          } else if (t > 0.7) {
-            sprite.material.opacity = 1 - (t - 0.7) / 0.3
-          }
-          sprite.position.set(camera.position.x, camera.position.y + 2.5, camera.position.z - 6)
-        },
+      colors.needsUpdate = true
+      regionDecor.forEach((group, index) => { group.visible = index === Math.min(3, Math.floor((wave - 1) / 3)) })
+      waveFormation(wave, gate, camera.aspect).forEach(({ x, z }, i) => {
+        const kind: EnemyKind = wave === 1 ? "shadow-warrior" : wave === 2 ? (i === 2 ? "stone-golem" : "shadow-warrior") : wave <= 6 ? (i % 3 === 0 ? "stone-golem" : "shadow-warrior") : i % 3 === 0 ? "spirit" : i % 3 === 1 ? "stone-golem" : "shadow-warrior"
+        spawnEnemy(`wave-${wave}-enemy-${i + 1}`, x, z, plan.speed, plan.damage, plan.health, kind)
       })
+      if (plan.bossHealth) spawnEnemy(region.boss, 0, -plan.spawnDistance - 14, plan.speed * 0.65, plan.damage * 1.5, plan.bossHealth, wave === 9 ? "spirit" : "stone-golem", true)
+      waveTotal = enemies.length
+      publishStatus()
+
+      playSound("waveStart")
     }
 
     const setGatesVisible = (visible: boolean) => {
@@ -1398,7 +1424,6 @@ export function GameCanvas({
         g.mesh.visible = visible
         if (g.labelSprite?.material) g.labelSprite.material.opacity = 1
       }
-      console.log(visible ? "gates shown" : "gates hidden")
     }
 
     // Shooting (raycast from camera center)
@@ -1464,7 +1489,7 @@ export function GameCanvas({
       arrow.add(trail)
 
       scene.add(arrow)
-      const startedAtMs = performance.now()
+      const startedAtMs = gameTime
       const durationMs = 260
       effects.push({
         obj: arrow,
@@ -1489,47 +1514,141 @@ export function GameCanvas({
       s.position.copy(point)
       s.scale.set(0.55, 0.55, 1)
       scene.add(s)
-      effects.push({ obj: s, expiresAtMs: performance.now() + 140 })
+      effects.push({ obj: s, expiresAtMs: gameTime + 140 })
     }
 
     let recoilUntilMs = 0
 
     const shoot = () => {
+      if (cannonMounted) { fireCannon(); return }
+      const shotTime = performance.now()
+      const shotStats = stats()
+      if (pausedRef.current || document.hidden || phase.mode !== "PLAYING_WAVE" || shotTime - lastShotAt < shotStats.interval) return
+      lastShotAt = shotTime
+      shots++
+      camera.updateMatrixWorld(true)
       raycaster.setFromCamera(aim, camera)
       const enemyMeshes = enemies.map((e) => e.mesh)
       const hits = raycaster.intersectObjects(enemyMeshes.concat(shootables), false)
-      const hit = hits[0]
-      const down = new THREE.Vector3(0, -1, 0)
-      const from = camera.position
-        .clone()
-        .add(right.clone().multiplyScalar(0.35))
-        .add(down.multiplyScalar(0.25))
-        .add(forward.clone().multiplyScalar(0.8))
-      const to = hit ? hit.point.clone() : from.clone().add(forward.clone().multiplyScalar(42))
+      let hit = hits[0]
+      let enemy = hit ? enemies.find((e) => e.mesh === hit.object) : undefined
+      if (!enemy) {
+        const assisted = assistedEnemy(raycaster.ray, enemies, hit?.distance ?? Infinity)
+        if (assisted) { enemy = assisted; hit = { object: assisted.mesh, point: assisted.mesh.position.clone() } as any }
+      }
+      const from = camera.localToWorld(new THREE.Vector3(0, -0.24, -1.2))
+      const to = hit ? hit.point.clone() : raycaster.ray.at(80, new THREE.Vector3())
       spawnArrowShot(from, to)
       playSound("bow")
-      recoilUntilMs = performance.now() + 100
-      if (!hit) return
-
-      const obj: any = hit.object
-      const enemy = enemies.find((e) => e.mesh === obj)
-      spawnHitFlash(hit.point)
-      playSound("hit")
+      recoilUntilMs = gameTime + 100
+      if (reticleRef.current) reticleRef.current.style.color = enemy ? "#ffffff" : "#ffd98a"
+      if (hit) { spawnHitFlash(hit.point); playSound("hit") }
       if (enemy) {
-        console.log("[shot enemy]", obj.name || obj.uuid)
-        damageEnemy(enemy, 1)
-        return
-      }
+        hitCount++
+        awardHit()
+        damageEnemy(enemy, shotStats.damage)
+      } else combo = 0
+      publishStatus()
+    }
 
-      console.log("[shot hit]", obj.name || obj.uuid)
+    const leaveCannon = () => {
+      if (!cannonMounted) return
+      cannonMounted = false
+      cannonExitAt = 0
+      camera.position.copy(cannonReturnPosition)
+      bow.visible = true
+      firing = false
+    }
+
+    const toggleCannon = () => {
+      if (pausedRef.current || document.hidden || phase.mode !== "PLAYING_WAVE") return
+      if (cannonMounted) leaveCannon()
+      else if (charge >= 100) {
+        cannonReturnPosition.copy(camera.position)
+        cannonMounted = true
+        bow.visible = false
+        camera.position.set(fortressCannon.cannon.position.x, playerHeightY + 1.2, 3.7)
+        camera.lookAt(fortressCannon.cannon.position.x, 1.5, -56)
+        yaw = camera.rotation.y
+        pitch = camera.rotation.x
+        updateAim(window.innerWidth / 2, window.innerHeight / 2)
+        firing = false
+      }
+      publishStatus()
+    }
+
+    const fireCannon = () => {
+      if (pausedRef.current || document.hidden || !cannonMounted || charge < 100 || phase.mode !== "PLAYING_WAVE") return
+      charge = 0
+      cannonFiredAt = gameTime
+      cannonExitAt = gameTime + 1000
+      firing = false
+      camera.updateMatrixWorld(true)
+      raycaster.setFromCamera(aim, camera)
+      const hit = raycaster.intersectObjects(enemies.map(e => e.mesh).concat(shootables), false)[0]
+      const point = hit ? hit.point.clone() : raycaster.ray.at(65, new THREE.Vector3())
+      point.y = Math.max(0.4, Math.min(5, point.y))
+      fortressCannon.update(point, false, 0)
+      const from = fortressCannon.muzzle.getWorldPosition(new THREE.Vector3())
+      const shell = new THREE.Mesh(new THREE.SphereGeometry(0.28, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffad4f }))
+      shell.name = "cannonball-in-flight"
+      shell.position.copy(from)
+      scene.add(shell)
+      spawnHitFlash(from)
+      const born = gameTime, duration = 650
+      effects.push({ obj: shell, expiresAtMs: born + duration, update: now => {
+        const t = Math.min(1, (now - born) / duration)
+        shell.position.copy(from).lerp(point, t)
+        shell.position.y += Math.sin(t * Math.PI) * 3
+      } })
+      for (let i = 0; i < 5; i++) {
+        const smoke = new THREE.Mesh(new THREE.SphereGeometry(0.28, 6, 5), new THREE.MeshBasicMaterial({ color: 0xb2a291, transparent: true, opacity: 0.5, depthWrite: false }))
+        smoke.position.copy(from)
+        scene.add(smoke)
+        effects.push({ obj: smoke, expiresAtMs: born + 950, update: now => {
+          const t = (now - born) / 950
+          smoke.position.copy(from).add(new THREE.Vector3(Math.sin(i * 2) * t, t * (1.5 + i * 0.2), -t * i))
+          smoke.scale.setScalar(1 + t * 3)
+          smoke.material.opacity = 0.5 * (1 - t)
+        } })
+      }
+      pendingShells.push({ point, landsAt: born + duration, damage: cannonDamage })
+      playSound("cannon")
+      publishStatus()
+    }
+
+    const detonateShells = () => {
+      for (let i = pendingShells.length - 1; i >= 0; i--) {
+        const shell = pendingShells[i]
+        if (gameTime < shell.landsAt) continue
+        pendingShells.splice(i, 1)
+        resolvingCannon = true
+        for (const enemy of [...enemies]) {
+          const distance = Math.hypot(enemy.mesh.position.x - shell.point.x, enemy.mesh.position.z - shell.point.z)
+          if (distance <= 14) damageEnemy(enemy, shell.damage * (1 - 0.5 * distance / 14), true)
+        }
+        resolvingCannon = false
+        const blast = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), new THREE.MeshBasicMaterial({ color: 0xff8b35, transparent: true, opacity: 0.55, depthWrite: false }))
+        blast.name = "cannon-impact-blast"
+        blast.position.copy(shell.point)
+        scene.add(blast)
+        const born = gameTime
+        effects.push({ obj: blast, expiresAtMs: born + 700, update: now => {
+          const t = (now - born) / 700
+          blast.scale.setScalar(1 + t * 13)
+          blast.material.opacity = 0.55 * (1 - t)
+        } })
+        playSound("enemyDeath")
+        publishStatus()
+        if (phase.mode !== "PLAYING_WAVE") break
+      }
     }
 
     const selectGate = (gate: Gate, now: number) => {
       highlightedGate = gate.type
       gateHighlightUntilMs = now + 250
       playSound("gateSelect")
-      onGateSelected?.(gate.type)
-      console.log(`gate selected: ${gate.label}`)
+      liveRef.current.onGateSelected?.(gate.type)
 
       // Begin next wave immediately after selection
       startWave(waveNumber + 1, gate.type)
@@ -1595,45 +1714,59 @@ export function GameCanvas({
       }
     }
 
-    // Mouse look stays disabled until pointer lock (click).
+    let looking = false
+    let leftPress: { x: number; y: number; lastX: number; lastY: number; at: number; dragging: boolean; held: boolean } | null = null
+    const updateAim = (clientX: number, clientY: number) => {
+      if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return
+      const point = pointerAim(clientX, clientY, window.innerWidth, window.innerHeight)
+      aim.set(point.x, point.y)
+      if (reticleRef.current) {
+        reticleRef.current.style.left = `${(point.x + 1) * 50}%`
+        reticleRef.current.style.top = `${(1 - point.y) * 50}%`
+      }
+    }
 
     const onMouseDown = (e: MouseEvent) => {
+      if (pausedRef.current || phase.mode !== "PLAYING_WAVE") return
+      if (e.button === 2) { e.preventDefault(); looking = true; return }
       if (e.button !== 0) return
       e.preventDefault()
 
-      if (document.pointerLockElement !== canvas) {
-        const sinceUnlock = performance.now() - lastPointerUnlockAtMs
-        if (sinceUnlock >= 0 && sinceUnlock < pointerRelockCooldownMs) {
-          // Ignore this click; user can click again once cooldown passes.
-          setInteractionHint("Click again to resume control")
-          return
-        }
-        try {
-          const maybePromise = (canvas as any).requestPointerLock?.()
-          if (maybePromise && typeof maybePromise.catch === "function") {
-            maybePromise.catch(() => {
-              // If the browser rejects quickly after unlock, treat it as an unlock cooldown.
-              lastPointerUnlockAtMs = performance.now()
-              setInteractionHint("Click again to resume control")
-            })
-          }
-        } catch {
-          // Some browsers throw SecurityError synchronously.
-          lastPointerUnlockAtMs = performance.now()
-          setInteractionHint("Click again to resume control")
-        }
-        return
-      }
-
-      shoot()
+      updateAim(e.clientX, e.clientY)
+      const x = Number.isFinite(e.clientX) ? e.clientX : window.innerWidth / 2
+      const y = Number.isFinite(e.clientY) ? e.clientY : window.innerHeight / 2
+      leftPress = { x, y, lastX: x, lastY: y, at: performance.now(), dragging: false, held: false }
     }
+    const releaseFire = () => {
+      if (leftPress && !leftPress.dragging && !leftPress.held) shoot()
+      leftPress = null
+      firing = false
+      looking = false
+    }
+    const preventContextMenu = (e: Event) => e.preventDefault()
+    const clearInput = () => { keys.clear(); touches.clear(); joyX = joyY = 0; leftPress = null; firing = false; looking = false; interactPressed = false }
+    const pauseOnBlur = () => { clearInput(); liveRef.current.onControlChange?.(false) }
 
     const onMouseMove = (e: MouseEvent) => {
-      if (document.pointerLockElement !== canvas) return
-      yaw -= e.movementX * mouseSensitivity
-      pitch -= e.movementY * mouseSensitivity
-      pitch = Math.max(-maxPitch, Math.min(maxPitch, pitch))
-      camera.rotation.set(pitch, yaw, 0, "YXZ")
+      if (pausedRef.current) return
+      if (e.target && e.target !== canvas && !looking && !leftPress) return
+      if (leftPress && Math.hypot(e.clientX - leftPress.x, e.clientY - leftPress.y) > 6) {
+        leftPress.dragging = true
+        firing = false
+      }
+      if (looking || leftPress?.dragging) {
+        const dx = leftPress ? e.clientX - leftPress.lastX : e.movementX
+        const dy = leftPress ? e.clientY - leftPress.lastY : e.movementY
+        yaw -= dx * mouseSensitivity
+        pitch -= dy * mouseSensitivity
+        pitch = Math.max(-maxPitch, Math.min(maxPitch, pitch))
+        if (cannonMounted) { yaw = Math.max(-1.1, Math.min(1.1, yaw)); pitch = Math.max(-0.7, Math.min(0.2, pitch)) }
+        camera.rotation.set(pitch, yaw, 0, "YXZ")
+        updateAim(window.innerWidth / 2, window.innerHeight / 2)
+      } else {
+        updateAim(e.clientX, e.clientY)
+      }
+      if (leftPress) { leftPress.lastX = e.clientX; leftPress.lastY = e.clientY }
     }
 
     const updateJoystick = () => {
@@ -1652,6 +1785,8 @@ export function GameCanvas({
     }
 
     const onTouchStart = (e: TouchEvent) => {
+      if (pausedRef.current || phase.mode !== "PLAYING_WAVE") return
+      updateAim(window.innerWidth / 2, window.innerHeight / 2)
       for (const t of Array.from(e.changedTouches)) {
         const side: TouchState["side"] = t.clientX < window.innerWidth / 2 ? "left" : "right"
         touches.set(t.identifier, {
@@ -1669,6 +1804,7 @@ export function GameCanvas({
     }
 
     const onTouchMove = (e: TouchEvent) => {
+      if (pausedRef.current) return
       const lookSensitivity = 0.004
       for (const t of Array.from(e.changedTouches)) {
         const st = touches.get(t.identifier)
@@ -1715,9 +1851,12 @@ export function GameCanvas({
     }
 
     const onKeyDown = (e: KeyboardEvent) => {
+      if (pausedRef.current || document.hidden) return
+      if (e.code === "Space") { e.preventDefault(); return }
+      if (e.code === "KeyE" && phase.mode === "PLAYING_WAVE") { if (!e.repeat) toggleCannon(); return }
+      if (e.code === "Digit1" || e.code === "Digit2") { if (!e.repeat) equipWeapon(e.code === "Digit1" ? "crossbow" : "repeater"); return }
       keys.add(e.code)
       if (e.code === "KeyE") {
-        console.log("E pressed")
         interactPressed = true
       }
     }
@@ -1727,6 +1866,9 @@ export function GameCanvas({
     }
 
     canvas.addEventListener("mousedown", onMouseDown)
+    canvas.addEventListener("contextmenu", preventContextMenu)
+    window.addEventListener("mouseup", releaseFire)
+    window.addEventListener("blur", pauseOnBlur)
     window.addEventListener("mousemove", onMouseMove)
     window.addEventListener("keydown", onKeyDown)
     window.addEventListener("keyup", onKeyUp)
@@ -1741,7 +1883,7 @@ export function GameCanvas({
       camera.aspect = width / height
       camera.updateProjectionMatrix()
 
-      renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2))
+      renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.25))
       renderer.setSize(width, height, false)
     }
 
@@ -1750,17 +1892,81 @@ export function GameCanvas({
 
     let rafId = 0
     let lastT = performance.now()
+    const resetFrameClock = () => { lastT = performance.now() }
+    document.addEventListener("visibilitychange", resetFrameClock)
+    let lastPausedRenderAt = -Infinity
+    let walkedDistance = 0, walkingBlend = 0
     const render = () => {
       rafId = window.requestAnimationFrame(render)
 
-      const now = performance.now()
-      const dt = Math.min((now - lastT) / 1000, 0.05)
-      lastT = now
+      const realNow = performance.now()
+      const frameMs = Math.max(0, realNow - lastT)
+      const dt = Math.min(frameMs / 1000, 0.05)
+      lastT = realNow
+      const command = commandRef.current
+      if (command && command.id !== processedCommand) {
+        processedCommand = command.id
+        if (command.type === "advance" && phase.mode === "GATE_SELECTION") {
+          applyUpgrade(command.upgrade)
+          liveRef.current.onGateSelected?.(command.trial)
+          startWave(waveNumber + 1, command.trial)
+        } else if (command.type === "cannon") toggleCannon()
+        else if (command.type === "weapon") equipWeapon(command.weapon)
+      }
 
-      if (pausedRef.current) {
-        renderer.render(scene, camera)
+      if (portalRedirectUrlRef.current && !portalRedirecting) {
+        portalRedirecting = true
+        portalEnterStartedAtMs = gameTime
+        portalRedirectAtMs = gameTime + 500
+        portalTargetUrl = portalRedirectUrlRef.current
+        portalRedirectUrlRef.current = null
+      }
+      if (reticleRef.current) {
+        reticleRef.current.style.opacity = pausedRef.current ? "0" : "1"
+        reticleRef.current.style.color = gameTime < hitUntil ? "#ffffff" : "#ffd98a"
+      }
+      if (pausedRef.current || document.hidden) {
+        clearInput()
+        if (!document.hidden && realNow - lastPausedRenderAt >= 250) {
+          renderer.render(scene, camera)
+          lastPausedRenderAt = realNow
+        }
         return
       }
+      if (phase.mode !== "PLAYING_WAVE" && overdriveUntil > gameTime) overdriveUntil += dt * 1000
+      gameTime += dt * 1000
+      const now = gameTime
+      detonateShells()
+      if (cannonExitAt && now >= cannonExitAt) { leaveCannon(); publishStatus() }
+      // The celebration lasts three real, unpaused seconds even at a low frame rate.
+      if (phase.mode === "WAVE_CLEAR") phase.remainingMs -= frameMs
+      if (phase.mode === "WAVE_CLEAR" && phase.remainingMs <= 0) {
+        phase = { mode: "GATE_SELECTION" }
+        clearInput()
+        setGatesVisible(true)
+        publishStatus()
+      }
+      if (resetWaveView) {
+        camera.lookAt(0, 1.5, -wavePlan(waveNumber, activeModifier).spawnDistance)
+        yaw = camera.rotation.y
+        pitch = camera.rotation.x
+        resetWaveView = false
+      }
+      worldScenery.update(now)
+      windUniform.value = now * 0.0015
+      const moteArray = moteGeometry.attributes.position.array as Float32Array
+      for (let i = 0; i < 160; i++) {
+        moteArray[i * 3 + 1] += dt * (waveNumber >= 4 && waveNumber <= 6 ? 1.3 : 0.3)
+        moteArray[i * 3] += Math.sin(now * 0.0006 + i) * dt * 0.25
+        if (moteArray[i * 3 + 1] > 24) moteArray[i * 3 + 1] = 0
+      }
+      moteGeometry.attributes.position.needsUpdate = true
+      if (leftPress && !leftPress.dragging && !leftPress.held && realNow - leftPress.at >= 180) {
+        leftPress.held = true
+        firing = true
+      }
+      if (firing) shoot()
+      if (now - lastStatusAt > 80) { lastStatusAt = now; publishStatus() }
 
       // Direction vectors from yaw (keep movement on the XZ plane)
       forward.set(0, 0, -1).applyAxisAngle(worldUp, yaw).normalize()
@@ -1778,6 +1984,7 @@ export function GameCanvas({
         move.add(right.clone().multiplyScalar(joyX))
       }
       if (move.lengthSq() > 0) move.normalize()
+      if (cannonMounted || phase.mode !== "PLAYING_WAVE") move.set(0, 0, 0)
 
       // Move + clamp (can't go outside platform / fall off edges)
       const halfW = platformWidth / 2 - 1.2
@@ -1785,28 +1992,46 @@ export function GameCanvas({
 
       const nextX = camera.position.x + move.x * moveSpeed * dt
       const nextZ = camera.position.z + move.z * moveSpeed * dt
-
+      const previousX = camera.position.x, previousZ = camera.position.z
       camera.position.x = Math.max(-halfW, Math.min(halfW, nextX))
       camera.position.z = Math.max(platformZ - halfD, Math.min(platformZ + halfD, nextZ))
+      const distanceMoved = Math.hypot(camera.position.x - previousX, camera.position.z - previousZ)
+      const walkingSpeed = distanceMoved / Math.max(0.001, dt)
+      walkedDistance += distanceMoved
+      walkingBlend += ((walkingSpeed > 0.05 ? 1 : 0) - walkingBlend) * (1 - Math.exp(-dt * 12))
+      camera.position.y = cannonMounted ? playerHeightY + 1.2 : playerFloorY + Math.cos(walkedDistance * 3.8) * 0.008 * walkingBlend
 
       // Enemy updates (move toward wall; once reached, deal DOT)
       const playerPos = camera.position
+      const guardian = enemies.find(enemy => enemy.boss)
+      if (guardian && waveNumber >= 6 && now >= reinforcementsAt && reinforcementCount < 3) {
+        reinforcementCount++
+        reinforcementsAt = now + 14000
+        spawnEnemy(`guardian-spirit-${reinforcementCount}`, guardian.mesh.position.x + (reinforcementCount % 2 ? 5 : -5), Math.min(-8, guardian.mesh.position.z - 8), wavePlan(waveNumber, activeModifier).speed, 5, 1 + waveNumber / 6, "spirit")
+        waveTotal++
+      }
       for (const e of enemies) {
         const wallZ = platformZ - platformDepth / 2
-        if (!e.breached) {
+        if (!e.breached && now >= waveGraceUntil) {
           const dz = wallZ - e.mesh.position.z
           if (dz <= 0.15) {
             e.breached = true
-            e.mesh.position.z = wallZ
+            e.mesh.position.z = wallZ - 1.4
+            e.mesh.position.x = e.targetX
+            e.baseY = platformTopY + (e.boss ? 2 : 0.7)
+            e.lastDamageAtMs = now
           } else {
-            e.mesh.position.z += Math.min(dz, e.speed * dt)
+            const surge = e.boss && waveNumber >= 12 && Math.floor((now - waveStartedAt) / 5000) % 2 === 1 ? 1.8 : 1
+            e.mesh.position.z += Math.min(dz, e.speed * dt * surge)
+            e.mesh.position.x += (e.targetX - e.mesh.position.x) * Math.min(1, dt * 0.18)
           }
-        } else {
+        } else if (e.breached) {
           const tickMs = 900
           if (now - e.lastDamageAtMs > tickMs) {
             e.lastDamageAtMs = now
-            onPlayerHit?.(e.breachDamage)
-            console.log("[breach damage]", e.mesh.name)
+            liveRef.current.onPlayerHit?.(e.breachDamage * armor)
+            hurtUntil = now + 250
+            combo = 0
           }
         }
 
@@ -1814,6 +2039,11 @@ export function GameCanvas({
         const floatAmp = 0.18
         const floatSpeed = 2.2
         e.mesh.position.y = e.baseY + Math.sin(now * 0.001 * floatSpeed + e.floatPhase) * floatAmp
+        e.healthBar.position.set(e.mesh.position.x, e.mesh.position.y + (e.boss ? 5 : 2.1), e.mesh.position.z)
+        e.healthBar.visible = e.boss || e.health < e.maxHealth
+        e.healthBar.scale.x = (e.boss ? 5 : 2.4) * Math.max(0, e.health / e.maxHealth)
+        if (e.kind === "spirit" && !e.breached) e.mesh.position.x += Math.sin(now * 0.002 + e.floatPhase) * dt * 1.8
+        if (e.boss && waveNumber === 3) e.mesh.material.color.set(Math.floor((now - waveStartedAt) / 4000) % 2 === 0 ? 0x8fc6e8 : 0xffb46b)
       }
 
       // Cleanup transient effects
@@ -1823,15 +2053,16 @@ export function GameCanvas({
         if (now < fx.expiresAtMs) continue
         scene.remove(fx.obj)
         if (fx.obj instanceof THREE.Group) {
-          fx.obj.traverse((child: any) => {
-            if (child instanceof THREE.Mesh || child instanceof THREE.Line) {
-              child.geometry.dispose()
-            }
-          })
+          // Arrow geometry and materials are shared and disposed on unmount.
+          fx.obj.traverse((child: any) => { if (child instanceof THREE.Line) child.geometry.dispose() })
+        } else if (fx.obj instanceof THREE.Mesh) {
+          fx.obj.geometry.dispose()
+          fx.obj.material.dispose()
         } else if (fx.obj instanceof THREE.Line) {
           fx.obj.geometry.dispose()
           fx.obj.material.dispose()
         } else if (fx.obj instanceof THREE.Sprite) {
+          fx.obj.material.map?.dispose()
           fx.obj.material.dispose()
         }
         effects.splice(i, 1)
@@ -1904,29 +2135,16 @@ export function GameCanvas({
         nearestGate !== null &&
         nearestDistance <= interactionDistance
 
-      if (phase.mode === "GATE_SELECTION" && now - lastGateDebugAtMs > 1000) {
-        lastGateDebugAtMs = now
-        console.log("current gamePhase", phase.mode)
-        console.log(
-          "nearestGate",
-          nearestGate?.label ?? "none",
-          "distance",
-          Number.isFinite(nearestDistance) ? nearestDistance.toFixed(2) : "n/a",
-        )
-      }
+      // The cannon panel and gate hall provide their own interaction instructions.
+      setInteractionHint("")
 
-      setInteractionHint(
-        nearestGateInRange && nearestGate
-          ? `Press E to choose ${nearestGate.label}`
-          : "",
-      )
-
-      if (now < recoilUntilMs) {
-        const t = 1 - (recoilUntilMs - now) / 100
-        camera.rotation.set(pitch + Math.sin(t * Math.PI) * 0.018, yaw, 0, "YXZ")
-      } else {
-        camera.rotation.set(pitch, yaw, 0, "YXZ")
-      }
+      // Recoil moves the weapon only; it must never kick the player's aim.
+      camera.rotation.set(pitch, yaw, 0, "YXZ")
+      camera.updateMatrixWorld(true)
+      raycaster.setFromCamera(cannonMounted ? aim : new THREE.Vector2(0, 0), camera)
+      const cannonTarget = cannonMounted ? raycaster.ray.at(65, new THREE.Vector3()) : new THREE.Vector3(-3.8, 1.5, -56)
+      fortressCannon.update(cannonTarget, charge >= 100, Math.max(0, 1 - (now - cannonFiredAt) / 500))
+      updatePose({ time: now, dt, speed: walkingSpeed, aimX: aim.x, aimY: aim.y, aspect: camera.aspect, recoil: now < recoilUntilMs ? Math.sin((1 - (recoilUntilMs - now) / 100) * Math.PI) : 0 })
 
       for (const gate of gates) {
         if (!gate.glow) continue
@@ -1939,13 +2157,6 @@ export function GameCanvas({
       // Gate interaction (press E near gate) - only between waves.
       if (interactPressed) {
         interactPressed = false
-        console.log("current gamePhase", phase.mode)
-        console.log(
-          "nearestGate",
-          nearestGate?.label ?? "none",
-          "distance",
-          Number.isFinite(nearestDistance) ? nearestDistance.toFixed(2) : "n/a",
-        )
         if (nearestGateInRange && nearestGate) {
           selectGate(nearestGate, now)
         }
@@ -2051,15 +2262,18 @@ export function GameCanvas({
     return () => {
       window.cancelAnimationFrame(rafId)
       window.removeEventListener("resize", resize)
+      window.removeEventListener("mouseup", releaseFire)
+      window.removeEventListener("blur", pauseOnBlur)
       canvas.removeEventListener("mousedown", onMouseDown)
+      canvas.removeEventListener("contextmenu", preventContextMenu)
       window.removeEventListener("mousemove", onMouseMove)
       window.removeEventListener("keydown", onKeyDown)
+      document.removeEventListener("visibilitychange", resetFrameClock)
       window.removeEventListener("keyup", onKeyUp)
       canvas.removeEventListener("touchstart", onTouchStart as any)
       canvas.removeEventListener("touchmove", onTouchMove as any)
       canvas.removeEventListener("touchend", onTouchEnd as any)
       canvas.removeEventListener("touchcancel", onTouchEnd as any)
-      document.removeEventListener("pointerlockchange", onPointerLockChange)
 
       clearEnemies()
 
@@ -2079,8 +2293,16 @@ export function GameCanvas({
           if (mat?.map?.dispose) mat.map.dispose()
           if (mat?.dispose) mat.dispose()
         }
+        if (obj instanceof THREE.Line) { obj.geometry.dispose(); obj.material.dispose() }
       })
       renderer.dispose()
+      directionalLight.shadow.dispose()
+      for (const geometry of [arrowShaftGeo, arrowHeadGeo, arrowFeatherGeo]) geometry.dispose()
+      for (const material of [arrowShaftMat, arrowHeadMat, arrowFeatherMat, arrowTrailMat]) material.dispose()
+      rainGeo.dispose()
+      rainMat.dispose()
+      moteGeometry.dispose()
+      moteMaterial.dispose()
       if (audioContext) {
         audioContext.close()
       }
@@ -2088,16 +2310,19 @@ export function GameCanvas({
   }, [])
 
   return (
-    <canvas
+    <><canvas
       ref={canvasRef}
+      aria-label="Erebuni battlefield. Click enemies to shoot, hold still to keep firing, left-drag to look around, WASD to move. At full loading progress, press E to mount the fortress cannon, then click a target."
       style={{
         position: "fixed",
         inset: 0,
         width: "100vw",
         height: "100vh",
         display: "block",
+        touchAction: "none",
+        cursor: "none",
       }}
-    />
+    /><svg ref={reticleRef} aria-hidden="true" viewBox="0 0 24 24" style={{ position: "fixed", left: "50%", top: "50%", width: 26, height: 26, transform: "translate(-50%, -50%)", pointerEvents: "none", zIndex: 15, color: "#ffd98a", filter: "drop-shadow(0 1px 2px #000)" }} fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="3" /><path d="M12 2v5m0 10v5M2 12h5m10 0h5" /></svg></>
   )
 }
 

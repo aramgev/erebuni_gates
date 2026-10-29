@@ -4,8 +4,10 @@ import Image from "next/image"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { CampaignPreview } from "./expedition-interface"
 
 interface MainMenuProps {
+  bestWave?: number
   username: string
   onUsernameChange: (username: string) => void
   onStartGame: () => void
@@ -17,6 +19,7 @@ interface MainMenuProps {
 }
 
 export function MainMenu({
+  bestWave = 0,
   username,
   onUsernameChange,
   onStartGame,
@@ -89,17 +92,18 @@ export function MainMenu({
           <section className="relative">
             <div className="absolute -left-4 top-0 hidden h-full w-px bg-gradient-to-b from-transparent via-[#c99337]/45 to-transparent md:block" />
             <div className="space-y-7">
-              <div className="space-y-5 text-base leading-8 text-[#eadfc7] md:text-lg">
-                <p>You are a warrior of ancient Urartu.</p>
+              <div className="space-y-3 text-base leading-7 text-[#eadfc7] md:text-lg">
+                <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[#c99337]">A siege across four realms</p>
                 <p>
-                  From the walls of Erebuni, you stand as the last line of
-                  defense. Waves of shadow and stone march across the plains.
+                  From the golden plains to the Storm Citadel, defend Erebuni
+                  against the armies of shadow and stone.
                 </p>
                 <p>
-                  Choose your trials. Embrace the blessings of Khaldi. Hold the
-                  wall. Survive the night.
+                  Forge your own bow with the blessings of Khaldi. Defeat four
+                  ancient guardians. See how far your legend can go.
                 </p>
               </div>
+              <CampaignPreview bestWave={bestWave} />
 
               <div className="max-w-sm space-y-2">
                 <label htmlFor="username" className="text-xs font-semibold uppercase tracking-[0.18em] text-[#c99337]">
@@ -121,7 +125,7 @@ export function MainMenu({
                   size="lg"
                   className="h-14 w-full sm:w-auto border border-[#ffd98a]/50 bg-[#c99337] px-8 text-base font-bold uppercase tracking-[0.2em] text-[#140d08] shadow-[0_0_30px_rgba(201,147,55,0.36)] hover:bg-[#ffd98a]"
                 >
-                  Start Game
+                  Begin the Siege
                 </Button>
                 <Button
                   onClick={onShowLeaderboard}

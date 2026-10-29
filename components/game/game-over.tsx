@@ -3,6 +3,10 @@
 import { Button } from "@/components/ui/button"
 
 interface GameOverProps {
+  victorious?: boolean
+  bestWave?: number
+  bestCombo?: number
+  accuracy?: number
   gatesSurvived: number
   enemiesDefeated: number
   currentWave: number
@@ -10,9 +14,9 @@ interface GameOverProps {
   onReturnToMenu: () => void
 }
 
-export function GameOver({ gatesSurvived, enemiesDefeated, currentWave, onPlayAgain, onReturnToMenu }: GameOverProps) {
+export function GameOver({ gatesSurvived, enemiesDefeated, currentWave, onPlayAgain, onReturnToMenu, victorious = false, bestWave = 0, bestCombo = 0, accuracy = 0 }: GameOverProps) {
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center">
+    <div className="absolute inset-0 z-30 flex items-center justify-center overflow-y-auto py-8">
       {/* Dark overlay with vignette effect */}
       <div className="absolute inset-0 bg-background/95" />
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_0%,rgba(0,0,0,0.4)_100%)]" />
@@ -28,9 +32,15 @@ export function GameOver({ gatesSurvived, enemiesDefeated, currentWave, onPlayAg
         {/* Title */}
         <div className="space-y-2">
           <h2 className="text-3xl md:text-4xl font-bold text-foreground tracking-wider">
-            The Trial Has Ended
+            {victorious ? "Erebuni Is Victorious" : "The Trial Has Ended"}
           </h2>
           <div className="w-32 h-px bg-border mx-auto" />
+        </div>
+
+        <div className="flex gap-6 text-center text-xs text-muted-foreground">
+          <span><strong className="mb-1 block text-xl text-primary">{bestCombo}×</strong>Best streak</span>
+          <span><strong className="mb-1 block text-xl text-primary">{accuracy}%</strong>Accuracy</span>
+          <span><strong className="mb-1 block text-xl text-primary">{bestWave}</strong>Personal best wave</span>
         </div>
 
         {/* Score display */}
@@ -60,7 +70,7 @@ export function GameOver({ gatesSurvived, enemiesDefeated, currentWave, onPlayAg
         {/* Achievement message based on score */}
         <p className="text-sm text-muted-foreground max-w-sm">
           {currentWave <= 1 && "The first step is always the hardest. Try again, warrior."}
-          {currentWave > 1 && currentWave <= 5 && "A promising start. The gods of Urartu are watching."}
+          {currentWave > 1 && currentWave < 5 && "A promising start. The gods of Urartu are watching."}
           {currentWave >= 5 && currentWave < 10 && "Impressive! Khaldi himself would be proud."}
           {currentWave >= 10 && "Legendary! You have proven yourself worthy of Erebuni."}
         </p>

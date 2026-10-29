@@ -1,9 +1,11 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useMutation } from "convex/react"
 import { api } from "@/convex/_generated/api"
 import { GameCanvas, MainMenu, GameHUD, GameOver, HelpModal, StoryModal, LeaderboardScreen } from "@/components/game"
+import { ExpeditionHUD, WaveReward } from "@/components/game/expedition-interface"
+import { INITIAL_STATUS, EMPTY_RECORD, readRecord, saveRecord, type ExpeditionCommand, type UpgradeId, type Trial } from "@/lib/expedition"
 
 type GameState = "menu" | "playing" | "gameover" | "leaderboard"
 type GateType = "fire" | "shadow" | "storm"
@@ -44,6 +46,26 @@ export default function GatesOfErebuni() {
   const [enemiesDefeated, setEnemiesDefeated] = useState(0)
   const [currentWave, setCurrentWave] = useState(1)
   const [muted, setMuted] = useState(false)
+  const [expedition, setExpedition] = useState(INITIAL_STATUS)
+  const [command, setCommand] = useState<ExpeditionCommand | null>(null)
+  const [record, setRecord] = useState(EMPTY_RECORD)
+  const [controlsActive, setControlsActive] = useState(true)
+  const [victorious, setVictorious] = useState(false)
+  const commandId = useRef(0)
+  const recordedRun = useRef(false)
+  useEffect(() => { setRecord(readRecord()) }, [])
+  const recordRun = () => {
+    if (recordedRun.current) return
+    recordedRun.current = true
+    setRecord(saveRecord(currentWave, enemiesDefeated, expedition.bestCombo))
+  }
+  const resumeBattle = () => {
+    setControlsActive(true)
+  }
+  const advanceWave = useCallback((upgrade: UpgradeId, trial: Trial) => {
+    setControlsActive(true)
+    setCommand({ id: ++commandId.current, type: "advance", upgrade, trial })
+  }, [])
   const [activeBlessing, setActiveBlessing] = useState<{
     name: string
     icon: string
@@ -130,6 +152,13 @@ export default function GatesOfErebuni() {
       setPortalProfile((prev) => ({ ...prev, username: normalizedUsername }))
     }
     setHealth(100)
+    setExpedition(INITIAL_STATUS)
+    setCommand(null)
+    setVictorious(false)
+    setControlsActive(true)
+    recordedRun.current = false
+    setPendingPortalUrl(null)
+    setPortalRedirectUrl(null)
     setEnemiesDefeated(0)
     setCurrentWave(1)
     setActiveBlessing(null)
@@ -162,6 +191,7 @@ export default function GatesOfErebuni() {
   }
 
   const handleQuitGame = () => {
+    recordRun()
     if (document.pointerLockElement) document.exitPointerLock()
     handleReturnToMenu()
   }
@@ -172,6 +202,7 @@ export default function GatesOfErebuni() {
 
   useEffect(() => {
     if (gameState === "playing" && health <= 0) {
+      recordRun()
       stopGameMusic()
       setGameState("gameover")
     }
@@ -209,8 +240,8 @@ export default function GatesOfErebuni() {
       username: portalProfile.username,
       score: enemiesDefeated,
       wave: currentWave,
-      gatesSurvived: currentWave - 1,
-    })
+      gatesSurvived: currentWave - 1 + Number(expedition.cleared),
+    }).catch((error) => console.warn("Score could not be submitted; personal record is saved on this device.", error))
   }, [currentWave, gameState, enemiesDefeated, portalProfile.username, submitScore])
 
   useEffect(() => {
@@ -238,6 +269,7 @@ export default function GatesOfErebuni() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setControlsActive(false); return }
       if (event.key !== "?") return
       event.preventDefault()
       handleOpenHelp()
@@ -252,6 +284,10 @@ export default function GatesOfErebuni() {
       {gameState === "playing" && (
         <GameCanvas
           onPlayerHit={handlePlayerHit}
+          onHeal={(amount) => setHealth((value) => Math.min(100, value + amount))}
+          onStatus={setExpedition}
+          command={command}
+          onControlChange={setControlsActive}
           onEnemyKilled={() => setEnemiesDefeated((s) => s + 1)}
           onWaveChange={setCurrentWave}
           portalProfile={portalProfile}
@@ -268,9 +304,12 @@ export default function GatesOfErebuni() {
             )
           }}
           onInteractionHintChange={setInteractionHint}
-          onPortalEnterRequest={(url) => setPendingPortalUrl(url)}
+          onPortalEnterRequest={(url) => {
+            if (document.pointerLockElement) document.exitPointerLock()
+            setPendingPortalUrl(url)
+          }}
           portalRedirectUrl={portalRedirectUrl}
-          isPaused={helpOpen || pendingPortalUrl !== null}
+          isPaused={helpOpen || pendingPortalUrl !== null || expedition.selectionReady || (!controlsActive && !portalRedirectUrl)}
           muted={muted}
         />
       )}
@@ -280,7 +319,7 @@ export default function GatesOfErebuni() {
         <GameHUD
           health={health}
           maxHealth={100}
-          gatesSurvived={currentWave - 1}
+          gatesSurvived={currentWave - 1 + Number(expedition.cleared)}
           enemiesDefeated={enemiesDefeated}
           currentWave={currentWave}
           username={portalProfile.username}
@@ -294,8 +333,20 @@ export default function GatesOfErebuni() {
       )}
 
       {/* UI Overlays based on game state */}
+      {gameState === "playing" && <ExpeditionHUD status={expedition} onCannon={() => setCommand({ id: ++commandId.current, type: "cannon" })} onWeaponChange={weapon => setCommand({ id: ++commandId.current, type: "weapon", weapon })} />}
+      {gameState === "playing" && expedition.selectionReady && !helpOpen && !pendingPortalUrl && <WaveReward key={expedition.wave} status={expedition} health={health} onAdvance={advanceWave} onFinish={() => { recordRun(); setVictorious(true); stopGameMusic(); setGameState("gameover") }} />}
+      {gameState === "playing" && !controlsActive && !expedition.selectionReady && !helpOpen && !pendingPortalUrl && <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/35 px-5 backdrop-blur-[2px]">
+        <div className="max-w-md rounded-xl border border-amber-200/25 bg-stone-950/90 p-8 text-center shadow-2xl">
+          <p className="text-xs uppercase tracking-[0.25em] text-amber-300">Take a breath</p>
+          <h2 className="mt-3 text-3xl font-bold text-amber-100">Game paused</h2>
+          <p className="my-5 text-sm leading-7 text-stone-400">Click an enemy to shoot. Hold still for rapid fire, or drag with the left mouse button to look around. WASD moves along the wall.</p>
+          <button onClick={resumeBattle} className="w-full rounded bg-amber-300 px-5 py-3 font-bold text-stone-950 hover:bg-amber-100">Resume game</button>
+          <p className="mt-4 text-xs text-stone-500">Hits and kills load the fortress cannon. At 100%, press E to mount it, then aim and click to fire.</p>
+        </div>
+      </div>}
       {gameState === "menu" && !portalProfile.portal && (
         <MainMenu
+          bestWave={record.wave}
           username={playerUsername}
           onUsernameChange={setPlayerUsername}
           onStartGame={handleStartGame}
@@ -313,7 +364,11 @@ export default function GatesOfErebuni() {
 
       {gameState === "gameover" && (
         <GameOver
-          gatesSurvived={currentWave - 1}
+          victorious={victorious}
+          bestWave={record.wave}
+          bestCombo={expedition.bestCombo}
+          accuracy={expedition.shots ? Math.round(100 * expedition.hits / expedition.shots) : 0}
+          gatesSurvived={currentWave - 1 + Number(expedition.cleared)}
           enemiesDefeated={enemiesDefeated}
           currentWave={currentWave}
           onPlayAgain={handlePlayAgain}
